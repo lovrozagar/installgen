@@ -36,6 +36,7 @@
 		"grunt:sync:globals:check": "node .rulesync/scripts/check-globals.mjs",
 		"lint": "oxlint",
 		"test": "bun run --filter @lovrozagar/installgen test",
+		"test:e2e": "INSTALLGEN_E2E_DOCKER=1 bun run test",
 		"typecheck": "bun run --filter @lovrozagar/installgen type:check",
 		"fmt": "oxfmt",
 		"fmt:check": "oxfmt --check",

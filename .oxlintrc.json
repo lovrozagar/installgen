@@ -1,5 +1,17 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
 	"extends": ["./oxlint.base.json"],
+	"ignorePatterns": [
+		"**/dist/**",
+		"**/coverage/**",
+		"**/installers/**",
+		".tmp/**",
+		".agents/**",
+		".claude/**",
+		".codex/**",
+		".gemini/**",
+		".grok/**",
+		".rulesync/**"
+	],
 	"rules": {}
 }
