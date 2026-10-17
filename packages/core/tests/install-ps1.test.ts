@@ -115,6 +115,11 @@ function expectInstalled(box: Sandbox, version: string) {
 	expect(readFileSync(target(box))).toEqual(fakeBinary("my-cli", version, "windows"))
 }
 
+/* the runners come from the environment; say so rather than report an empty file */
+if (PS_RUNNERS.length === 0) {
+	test.skip("install.ps1: no PowerShell runner (INSTALLGEN_E2E_SHELLS=pwsh or INSTALLGEN_E2E_DOCKER=1)", () => {})
+}
+
 describe.each(PS_RUNNERS)("install.ps1 under $name", (runner) => {
 	describe("formats", () => {
 		test.each([

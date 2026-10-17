@@ -145,7 +145,12 @@ const TOOLS = [
 	"sleep",
 ]
 
-describe.each(SH_RUNNERS)("install.sh under $name", async (runner) => {
+/* the runners come from the environment; say so rather than report an empty file */
+if (SH_RUNNERS.length === 0) {
+	test.skip("install.sh: no sh runner (INSTALLGEN_E2E_SHELLS=sh or INSTALLGEN_E2E_DOCKER=1)", () => {})
+}
+
+describe.each(SH_RUNNERS)("install.sh under $name", (runner) => {
 	describe("formats", () => {
 		test.each([
 			["tar.gz", "tar.gz", {}],
