@@ -5,7 +5,9 @@
 		"rootDir": ".",
 		"declaration": false,
 		"declarationMap": false,
-		"sourceMap": false
+		"sourceMap": false,
+		/* the examples import the package by name: type-check them against the source, so no dist is needed */
+		"paths": { "@lovrozagar/installgen": ["./src/index.ts"] }
 	},
 	"include": ["src/**/*.ts", "tests/**/*.ts", "examples/**/*.ts", "vitest.config.ts"],
 	"exclude": []
