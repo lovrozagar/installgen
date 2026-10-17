@@ -22,6 +22,8 @@ function sourceProps(): Map<string, Prop> {
 	return props
 }
 
+const unquote = (s: string) => s.replace(/^`(.*)`$/, "$1")
+
 /** The README's prop table: `| Prop | Type | Default | Meaning |`. */
 function readmeProps(markdown: string): Map<string, Prop & { default: string; meaning: string }> {
 	const lines = markdown.split("\n")
@@ -34,7 +36,6 @@ function readmeProps(markdown: string): Map<string, Prop & { default: string; me
 			.split(/(?<!\\)\|/)
 			.map((c) => c.trim().replaceAll("\\|", "|"))
 		const [prop = "", type = "", def = "", meaning = ""] = cells
-		const unquote = (s: string) => s.replace(/^`(.*)`$/, "$1")
 		rows.set(unquote(prop), { type: unquote(type), required: def === "required", default: def, meaning })
 	}
 	return rows
