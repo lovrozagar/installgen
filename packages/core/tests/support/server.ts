@@ -196,6 +196,8 @@ export interface ReleaseOptions {
 	defaultVersion?: string
 	/** GoReleaser `wrap_in_directory`: archives hold `<name>_<version>_<os>_<arch>/<binary>`. */
 	wrap?: boolean
+	/** More archive entries, e.g. a second file with the binary's name. */
+	extra?: readonly Entry[]
 }
 
 export interface Release {
@@ -215,7 +217,13 @@ export function expand(segments: readonly Segment[], version: string, tagPrefix:
 		.join("")
 }
 
-function packageFor(p: ResolvedPlatform, resolved: ResolvedConfig, version: string, wrap: boolean): Buffer {
+function packageFor(
+	p: ResolvedPlatform,
+	resolved: ResolvedConfig,
+	version: string,
+	wrap: boolean,
+	extra: readonly Entry[],
+): Buffer {
 	const binary = fakeBinary(resolved.name, version, p.os)
 	if (p.format === "raw") return binary
 	const exe = p.os === "windows" ? `${resolved.name}.exe` : resolved.name
@@ -232,6 +240,7 @@ function packageFor(p: ResolvedPlatform, resolved: ResolvedConfig, version: stri
 		...dirs.map((name) => ({ name })),
 		{ name: inside, data: binary, mode: 0o755 },
 		{ name: "README.md", data: `# ${resolved.name}\n` },
+		...extra,
 	]
 	return p.format === "zip" ? zip(entries) : tarGz(entries)
 }
@@ -255,7 +264,7 @@ export function publish(server: TestServer, options: ReleaseOptions): Release {
 		const sums = new Map<string, string[]>()
 		for (const p of resolved.platforms) {
 			const asset = assetOf(p, version)
-			const data = packageFor(p, resolved, version, options.wrap ?? false)
+			const data = packageFor(p, resolved, version, options.wrap ?? false, options.extra ?? [])
 			server.set(`${options.prefix}/${asset}`, data)
 			if (p.checksums) {
 				const path = expand(p.checksums, version, resolved.tagPrefix)

@@ -7,6 +7,7 @@ import {
 	fakeBinary,
 	publish,
 	startServer,
+	tarGz,
 	type ChecksumStyle,
 	type ReleaseOptions,
 	type TestServer,
@@ -174,6 +175,29 @@ describe.each(SH_RUNNERS)("install.sh under $name", async (runner) => {
 			expect(r.stdout).toContain("Installed")
 			expect(server.requested(rel.baseUrl.slice(server.url.length))).toContain(rel.asset(HOST, "1.2.3"))
 		})
+	})
+
+	test("two files named like the binary fail, asking for binaryInArchive", async () => {
+		const box = sandbox()
+		const rel = release({
+			wrap: true,
+			extra: [{ name: "bin/" }, { name: "bin/my-cli", data: "#!/bin/sh\necho stray\n", mode: 0o755 }],
+		})
+		const r = await install(runner, box, rel.shUrl)
+		expect(r.status).not.toBe(0)
+		expect(r.stderr).toContain(
+			`${rel.asset(HOST, "1.2.3").split("/").at(-1)} holds 2 files named my-cli; set binaryInArchive`,
+		)
+		expect(existsSync(join(box.home, ".my-cli"))).toBe(false)
+	})
+
+	test("an archive without the binary fails", async () => {
+		const box = sandbox()
+		const rel = release({ config: noChecksums })
+		server.set(`${rel.baseUrl.slice(server.url.length)}/${rel.asset(HOST, "1.2.3")}`, tarGz([{ name: "README.md" }]))
+		const r = await install(runner, box, rel.shUrl)
+		expect(r.status).not.toBe(0)
+		expect(r.stderr).toContain("my-cli not found in")
 	})
 
 	describe("versions", () => {
@@ -453,13 +477,43 @@ describe.each(SH_RUNNERS)("install.sh under $name", async (runner) => {
 			expect(readFileSync(ghPath, "utf8")).toBe(`/existing\n${join(box.home, ".my-cli/bin")}\n`)
 		})
 
-		test("another copy first on PATH gets a shadowing warning", async () => {
+		test("another copy ahead of the install dir on PATH gets a shadowing warning", async () => {
+			const box = sandbox()
+			shim(box, "my-cli", "echo old")
+			const rel = release()
+			const dir = join(box.home, ".my-cli/bin")
+			const r = await install(runner, box, rel.shUrl, { env: { PATH: `${box.shims}:${dir}:${runner.systemPath}` } })
+			expect(r.status, output(r)).toBe(0)
+			expect(output(r)).toContain(`${join(box.shims, "my-cli")} comes first on PATH`)
+		})
+
+		test("another copy on PATH with NO_MODIFY_PATH gets a shadowing warning", async () => {
+			const box = sandbox()
+			shim(box, "my-cli", "echo old")
+			const rel = release()
+			const r = await install(runner, box, rel.shUrl, { env: { MY_CLI_NO_MODIFY_PATH: "1" } })
+			expect(r.status, output(r)).toBe(0)
+			expect(output(r)).toContain(`${join(box.shims, "my-cli")} comes first on PATH`)
+		})
+
+		test("another copy on PATH is not a shadow when the profile prepends the install dir", async () => {
 			const box = sandbox()
 			shim(box, "my-cli", "echo old")
 			const rel = release()
 			const r = await install(runner, box, rel.shUrl)
 			expect(r.status, output(r)).toBe(0)
-			expect(output(r)).toContain(`${join(box.shims, "my-cli")} comes first on PATH`)
+			expect(readFileSync(join(box.home, ".profile"), "utf8")).toContain('export PATH="$HOME/.my-cli/bin:$PATH"')
+			expect(output(r)).not.toContain("comes first on PATH")
+		})
+
+		test("the install dir ahead of another copy: no warning", async () => {
+			const box = sandbox()
+			shim(box, "my-cli", "echo old")
+			const rel = release()
+			const dir = join(box.home, ".my-cli/bin")
+			const r = await install(runner, box, rel.shUrl, { env: { PATH: `${dir}:${box.shims}:${runner.systemPath}` } })
+			expect(r.status, output(r)).toBe(0)
+			expect(output(r)).not.toContain("comes first on PATH")
 		})
 
 		test("the message and the uninstall hint close the run", async () => {

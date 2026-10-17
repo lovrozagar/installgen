@@ -296,7 +296,10 @@ main() {
 	elif [ -n "$binary_in_archive" ]; then
 		bin="$tmp/x/$binary_in_archive"
 	else
-		bin=$(find "$tmp/x" -type f -name "$name" | head -n 1)
+		# exactly one match: a mispacked archive with two must not install whichever find lists first
+		bin=$(find "$tmp/x" -type f -name "$name")
+		matches=$(printf '%s\n' "$bin" | grep -c .)
+		[ "$matches" -le 1 ] || fail "$asset_file holds $matches files named $name; set binaryInArchive"
 	fi
 	[ -n "$bin" ] && [ -f "$bin" ] || fail "$name not found in $asset_file"
 
@@ -316,10 +319,6 @@ main() {
 	ok "$verb" "$target_display"
 
 	# PATH
-	found=$(command -v "$name" 2>/dev/null) || found=''
-	if [ -n "$found" ] && [ "$found" != "$target" ]; then
-		warn "$found comes first on PATH and shadows the new $name"
-	fi
 	now_line=''
 	case ":$PATH:" in
 	*":$install_dir:"*) on_path=1 ;;
@@ -364,6 +363,11 @@ main() {
 		if [ -n "${GITHUB_PATH:-}" ]; then
 			printf '%s\n' "$install_dir" >>"$GITHUB_PATH" || warn "could not append to \$GITHUB_PATH"
 		fi
+	fi
+	# Another copy shadows this one only where PATH stays as it is; a profile edit prepends the install dir.
+	found=$(command -v "$name" 2>/dev/null) || found=''
+	if [ -z "$now_line" ] && [ -n "$found" ] && [ "$found" != "$target" ]; then
+		warn "$found comes first on PATH and shadows the new $name"
 	fi
 
 	if [ "$verb" = Updated ]; then done_word=updated; else done_word=installed; fi
