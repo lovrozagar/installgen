@@ -153,13 +153,13 @@ param([string]$Version)
 	$binaryInArchive = ''
 	switch ($platform) {
 		'windows/amd64' {
-			$assetPath = ($tag + '/my-cli_' + $ver + '_Windows_x86_64.zip')
+			$assetPath = ($tag + '/my-cli_Windows_x86_64.zip')
 			$format = 'zip'
 			$checksumsPath = ($tag + '/my-cli_' + $ver + '_checksums.txt')
 			$binaryInArchive = ''
 		}
 		'windows/arm64' {
-			$assetPath = ($tag + '/my-cli_' + $ver + '_Windows_arm64.zip')
+			$assetPath = ($tag + '/my-cli_Windows_arm64.zip')
 			$format = 'zip'
 			$checksumsPath = ($tag + '/my-cli_' + $ver + '_checksums.txt')
 			$binaryInArchive = ''
@@ -195,13 +195,13 @@ param([string]$Version)
 		$tag = $tagPrefix + $ver
 		switch ($platform) {
 		'windows/amd64' {
-			$assetPath = ($tag + '/my-cli_' + $ver + '_Windows_x86_64.zip')
+			$assetPath = ($tag + '/my-cli_Windows_x86_64.zip')
 			$format = 'zip'
 			$checksumsPath = ($tag + '/my-cli_' + $ver + '_checksums.txt')
 			$binaryInArchive = ''
 		}
 		'windows/arm64' {
-			$assetPath = ($tag + '/my-cli_' + $ver + '_Windows_arm64.zip')
+			$assetPath = ($tag + '/my-cli_Windows_arm64.zip')
 			$format = 'zip'
 			$checksumsPath = ($tag + '/my-cli_' + $ver + '_checksums.txt')
 			$binaryInArchive = ''

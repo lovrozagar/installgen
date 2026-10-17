@@ -109,25 +109,25 @@ supported() {
 resolve_platform() {
 	case "$1" in
 		'linux/amd64')
-			asset_path="$tag"'/my-cli_'"$version"'_Linux_x86_64.tar.gz'
+			asset_path="$tag"'/my-cli_Linux_x86_64.tar.gz'
 			format='tar.gz'
 			checksums_path="$tag"'/my-cli_'"$version"'_checksums.txt'
 			binary_in_archive=''
 			;;
 		'linux/arm64')
-			asset_path="$tag"'/my-cli_'"$version"'_Linux_arm64.tar.gz'
+			asset_path="$tag"'/my-cli_Linux_arm64.tar.gz'
 			format='tar.gz'
 			checksums_path="$tag"'/my-cli_'"$version"'_checksums.txt'
 			binary_in_archive=''
 			;;
 		'darwin/amd64')
-			asset_path="$tag"'/my-cli_'"$version"'_Darwin_x86_64.tar.gz'
+			asset_path="$tag"'/my-cli_Darwin_x86_64.tar.gz'
 			format='tar.gz'
 			checksums_path="$tag"'/my-cli_'"$version"'_checksums.txt'
 			binary_in_archive=''
 			;;
 		'darwin/arm64')
-			asset_path="$tag"'/my-cli_'"$version"'_Darwin_arm64.tar.gz'
+			asset_path="$tag"'/my-cli_Darwin_arm64.tar.gz'
 			format='tar.gz'
 			checksums_path="$tag"'/my-cli_'"$version"'_checksums.txt'
 			binary_in_archive=''
