@@ -193,6 +193,7 @@ param([string]$Version)
 		if ($tagPrefix -and $ver.StartsWith($tagPrefix, [StringComparison]::Ordinal)) { $ver = $ver.Substring($tagPrefix.Length) }
 		if ($ver -cnotmatch '^[A-Za-z0-9._+-]+$') { Fail "invalid version: '$ver'" }
 		$tag = $tagPrefix + $ver
+		Write-Verbose "release tag ${tag}"
 		switch ($platform) {
 		'windows/amd64' {
 			$assetPath = ($ver + '/my-cli-windows-amd64.exe')

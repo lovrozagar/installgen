@@ -103,8 +103,9 @@ export function placeholders(
 			/* with no Windows build there is no install.ps1 to point Git Bash users at */
 			PS1_URL: shLiteral(windows.length > 0 ? resolved.scriptUrls.ps1 : ""),
 			CURL_FLAGS: resolved.https ? "--proto '=https' --tlsv1.2" : "",
-			WGET_FLAGS: resolved.https ? "--https-only" : "",
-			PLATFORMS: unix.map((p) => p.platform).join(" "),
+			WGET_FLAGS: shLiteral(resolved.https ? "--https-only" : ""),
+			/* a case pattern list */
+			PLATFORMS: unix.map((p) => shLiteral(p.platform)).join(" | "),
 			PLATFORM_CASES: unix.map(shCase).join("\n"),
 		},
 		ps1: {

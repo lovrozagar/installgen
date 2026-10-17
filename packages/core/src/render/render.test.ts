@@ -41,6 +41,7 @@ describe("render", () => {
 		assertStructure(out, false)
 		expect(out.sh).not.toContain("--proto")
 		expect(out.sh).not.toContain("--https-only")
+		expect(placeholders(resolve({ baseUrl: "http://127.0.0.1:8080" }), {}).sh.WGET_FLAGS).toBe("''")
 	})
 
 	test("fills every placeholder of the real templates, and every value is used", () => {
@@ -83,7 +84,7 @@ describe("render", () => {
 
 	test("the platform list and cases only name the configured platforms", () => {
 		const values = placeholders(resolve({ platforms: ["linux/amd64", "darwin/arm64", "windows/arm64"] }), {})
-		expect(values.sh.PLATFORMS).toBe("linux/amd64 darwin/arm64")
+		expect(values.sh.PLATFORMS).toBe("'linux/amd64' | 'darwin/arm64'")
 		expect(values.ps1.PLATFORMS).toBe("@('windows/arm64')")
 		expect(values.sh.PLATFORM_CASES).toContain("'linux/amd64')")
 		expect(values.sh.PLATFORM_CASES).not.toContain("windows")
@@ -111,7 +112,7 @@ describe("placeholder values", () => {
 			SH_URL: "'https://dl.example.com/my-cli/install.sh'",
 			PS1_URL: "'https://dl.example.com/my-cli/install.ps1'",
 			CURL_FLAGS: "--proto '=https' --tlsv1.2",
-			WGET_FLAGS: "--https-only",
+			WGET_FLAGS: "'--https-only'",
 		})
 		expect(values.sh.PLATFORM_CASES).toContain(
 			[
