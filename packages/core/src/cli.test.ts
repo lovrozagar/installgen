@@ -476,6 +476,8 @@ describe("terminal output", () => {
 	})
 })
 
+const errno = (code: string) => Object.assign(new Error(`write ${code}`), { code })
+
 /* a process whose stdout fails on its first write the way a closed pipe does */
 function fakeProc(cwd: string, error: NodeJS.ErrnoException | undefined) {
 	const written: string[] = []
@@ -501,8 +503,6 @@ function fakeProc(cwd: string, error: NodeJS.ErrnoException | undefined) {
 }
 
 describe("start", () => {
-	const errno = (code: string) => Object.assign(new Error(`write ${code}`), { code })
-
 	test("EPIPE on stdout (| head) stops writing and exits quietly with the current code", async () => {
 		const dir = sandbox({ "installgen.config.mjs": configSource("https://dl.example.com/my-cli") })
 		const { proc, written, exits, errs } = fakeProc(dir, errno("EPIPE"))
