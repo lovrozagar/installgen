@@ -87,7 +87,7 @@ $ bunx installgen init --preset goreleaser
 Set baseUrl and assetPath for your releases, then run `installgen build`.
 ```
 
-The preset is a complete config for GoReleaser's default archive names:
+The preset is a complete config for the archive names `goreleaser init` writes:
 
 ```ts
 import { defineConfig, type Arch, type Os } from "@lovrozagar/installgen"
@@ -386,7 +386,7 @@ To give users `curl -fsSL https://get.my-cli.dev | sh`, redirect that URL to `in
 
 The checksums come from the same host as the binaries. They catch a truncated or corrupted download, a stale CDN copy, and a half-finished upload. They do not protect against a compromised host or leaked bucket credentials: whoever can replace the binary can replace its checksum too. The scripts add no signature check (minisign, cosign); that is a non-goal for now.
 
-What the scripts guarantee themselves: every value from your config is single-quoted, so nothing in it runs; the version from `latest` or the user is validated before use; with an https `baseUrl`, curl and GNU wget refuse to follow a redirect to http; and the scripts are ASCII, so no encoding changes what they say.
+What the scripts guarantee themselves: every value from your config is single-quoted, so nothing in it runs; the version from `latest` or the user is validated before use; with an https `baseUrl`, curl and GNU wget refuse to follow a redirect to http, and `install.ps1` refuses one too (Windows PowerShell 5.1's .NET Framework would otherwise follow it); and the scripts are ASCII, so no encoding changes what they say.
 
 `curl | sh` runs whatever the host serves at that moment. Users who want to read first can download the script, read it, and run it.
 

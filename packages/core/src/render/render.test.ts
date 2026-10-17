@@ -53,6 +53,17 @@ describe("render", () => {
 		}
 	})
 
+	test("install.ps1 refuses an https to http redirect on both download paths", () => {
+		const ps1 = render(resolve(), {}).ps1 as string
+		expect(ps1).toContain("# installgen:begin Assert-HttpsKept")
+		expect(ps1).toContain("# installgen:end Assert-HttpsKept")
+		expect(ps1).toMatch(/function Assert-HttpsKept\(/)
+		/* after GetResponse() in the progress path, and on the -PassThru response of the Invoke-WebRequest fallback */
+		expect(ps1).toMatch(/GetResponse\(\)[\s\S]{0,200}Assert-HttpsKept -Requested \$Url -Final \$response\.ResponseUri/)
+		expect(ps1).toMatch(/Invoke-WebRequest -UseBasicParsing -Uri \$Url -OutFile \$Path -PassThru/)
+		expect(ps1).toMatch(/Assert-HttpsKept -Requested \$Url -Final \$final/)
+	})
+
 	test("an unknown placeholder in a template is an error", () => {
 		expect(() => render(resolve(), {}, { sh: "#!/bin/sh\n@@NOPE@@\n", ps1: "" })).toThrow(
 			/unknown placeholder @@NOPE@@ in install\.sh/,

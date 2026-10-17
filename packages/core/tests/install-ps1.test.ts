@@ -4,7 +4,10 @@ import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import type { InstallgenConfig } from "../src/config/define-config.ts"
 import { fakeBinary, publish, startServer, type ReleaseOptions, type TestServer } from "./support/server.ts"
-import { runners, type Runner, type RunResult } from "./support/shells.ts"
+import { spawnSync } from "node:child_process"
+import { resolveConfig } from "../src/config/resolve.ts"
+import { render } from "../src/render/render.ts"
+import { pwshCommand, runners, type Runner, type RunResult } from "./support/shells.ts"
 
 const PS_RUNNERS = runners().filter((r) => r.kind === "ps1")
 const WIN = process.platform === "win32"
@@ -114,6 +117,42 @@ const output = (r: RunResult) => r.stdout + r.stderr
 function expectInstalled(box: Sandbox, version: string) {
 	expect(readFileSync(target(box))).toEqual(fakeBinary("my-cli", version, "windows"))
 }
+
+/*
+ * .NET Framework (Windows PowerShell 5.1) follows an https to http redirect; the script must refuse one, or a
+ * man in the middle could swap the binary and its same-host checksum. The guard runs here in real pwsh, cut
+ * from a rendered script; the Windows CI legs run it under 5.1.
+ */
+const PWSH = pwshCommand()
+test.runIf(PWSH)("Assert-HttpsKept refuses https to http and allows the rest", () => {
+	const ps1 = render(resolveConfig({ ...config, baseUrl: "https://dl.example.com" }), {}).ps1 as string
+	const begin = ps1.indexOf("# installgen:begin Assert-HttpsKept")
+	const end = ps1.indexOf("# installgen:end Assert-HttpsKept")
+	expect(begin).toBeGreaterThan(-1)
+	const fn = ps1.slice(begin, end)
+	const redirects = [
+		["https://dl.example.com/a", "https://cdn.example.com/a"],
+		["https://dl.example.com/a", "http://cdn.example.com/a"],
+		["HTTPS://dl.example.com/a", "http://cdn.example.com/a"],
+		["http://127.0.0.1:8080/a", "http://127.0.0.1:8080/b"],
+	]
+	const script = [
+		fn,
+		...redirects.map(
+			([requested, final]) =>
+				`try { Assert-HttpsKept -Requested '${requested}' -Final ([Uri]'${final}'); Write-Output 'ok' } catch { Write-Output "threw: $($_.Exception.Message)" }`,
+		),
+	].join("\n")
+	const [bin, ...args] = PWSH as [string, ...string[]]
+	const r = spawnSync(bin, [...args, Buffer.from(script, "utf16le").toString("base64")], { encoding: "utf8" })
+	expect(r.status, r.stderr).toBe(0)
+	expect(r.stdout.trim().split(/\r?\n/)).toEqual([
+		"ok",
+		"threw: refusing https://dl.example.com/a: redirected from https to http://cdn.example.com/a",
+		"threw: refusing HTTPS://dl.example.com/a: redirected from https to http://cdn.example.com/a",
+		"ok",
+	])
+})
 
 /* the runners come from the environment; say so rather than report an empty file */
 if (PS_RUNNERS.length === 0) {

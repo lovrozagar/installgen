@@ -54,6 +54,16 @@ param([string]$Version)
 	}
 	function Fail([string]$Text) { throw "$name install failed: $Text" }
 
+	# installgen:begin Assert-HttpsKept
+	# .NET Framework (Windows PowerShell 5.1) follows an https to http redirect. Refuse one: over http a man in the
+	# middle could swap the binary and its checksum, which comes from the same host.
+	function Assert-HttpsKept([string]$Requested, [Uri]$Final) {
+		if ($Requested -match '^https://' -and $Final.Scheme -ne 'https') {
+			throw "refusing ${Requested}: redirected from https to $Final"
+		}
+	}
+	# installgen:end Assert-HttpsKept
+
 	function Save-WithProgress([string]$Url, [string]$Path, [string]$Label) {
 		# a pty without a size reports 0 columns
 		$width = 80
@@ -67,6 +77,7 @@ param([string]$Version)
 		if ($request.Proxy) { $request.Proxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials }
 		$response = $request.GetResponse()
 		try {
+			Assert-HttpsKept -Requested $Url -Final $response.ResponseUri
 			$total = $response.ContentLength
 			$in = $response.GetResponseStream()
 			$out = [IO.File]::Create($Path)
@@ -111,9 +122,19 @@ param([string]$Version)
 				return
 			} catch {
 				Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+				# a refused downgrade is final; anything else falls back to Invoke-WebRequest
+				if ($_.Exception.Message -like 'refusing *') { throw }
 			}
 		}
-		Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Path
+		$result = Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Path -PassThru
+		# the final URI: HttpWebResponse on 5.1, HttpResponseMessage on 7 (which refuses the downgrade itself)
+		$final = if ($result.BaseResponse.ResponseUri) { $result.BaseResponse.ResponseUri } else { $result.BaseResponse.RequestMessage.RequestUri }
+		try {
+			Assert-HttpsKept -Requested $Url -Final $final
+		} catch {
+			Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+			throw
+		}
 	}
 
 	Write-Host "$name installer"
