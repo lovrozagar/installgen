@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish (e.g. v0.1.1). Empty = this ref."
+        required: false
+        default: ""
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: "1.4.3"
+  PACKAGE_NAME: "@lovrozagar/installgen"
+  PACKAGE_DIR: packages/core
+
+jobs:
+  # the gates of ci.yml's check job
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: current
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run fmt:check
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run test
+
+  npmjs:
+    name: npmjs.com
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm install -g npm@latest
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      # prepack builds dist/ with tsc and copies the root README and LICENSE in, so the toolchain has to be here
+      - run: bun install --frozen-lockfile
+      - name: Check tag matches package.json
+        env:
+          REF: ${{ inputs.tag || github.ref_name }}
+        run: |
+          tag="${REF#v}"
+          pkg="$(node -p "require('./${PACKAGE_DIR}/package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag v$tag does not match ${PACKAGE_DIR}/package.json version $pkg"
+            exit 1
+          fi
+      - name: Publish to registry.npmjs.org
+        working-directory: ${{ env.PACKAGE_DIR }}
+        env:
+          REF: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="${REF#v}"
+          name="${PACKAGE_NAME}"
+          encoded="$(node -p 'encodeURIComponent(process.argv[1])' "$name")"
+
+          if npm view "${name}@${tag}" version >/dev/null 2>&1; then
+            echo "npm already has ${name}@${tag}; skipping"
+            exit 0
+          fi
+          if curl -fsSIL "https://registry.npmjs.org/${name}/-/${name##*/}-${tag}.tgz" >/dev/null 2>&1; then
+            echo "npm tarball for ${name}@${tag} already exists; skipping"
+            exit 0
+          fi
+
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "OIDC request URL/token missing: id-token: write is not in effect"
+            exit 1
+          fi
+          audience="$(node -p 'encodeURIComponent("npm:registry.npmjs.org")')"
+          curl -fsSL \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}" \
+            -o /tmp/oidc.json
+          node -e 'const j=require("/tmp/oidc.json"); if(!j.value) process.exit(2)'
+          node -e '
+            const t = require("/tmp/oidc.json").value
+            const p = JSON.parse(Buffer.from(t.split(".")[1], "base64url").toString())
+            console.log(JSON.stringify({
+              iss: p.iss,
+              aud: p.aud,
+              sub: p.sub,
+              workflow: p.workflow,
+              job_workflow_ref: p.job_workflow_ref,
+              repository: p.repository,
+              ref: p.ref,
+              environment: p.environment ?? null,
+            }))
+          '
+
+          oidc_jwt="$(node -e 'process.stdout.write(require("/tmp/oidc.json").value)')"
+          code=$(curl -sS -o /tmp/npm-ex.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${oidc_jwt}" \
+            -H "Content-Type: application/json" \
+            "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${encoded}")
+          echo "oidc exchange HTTP $code"
+          node -e 'const j=require("/tmp/npm-ex.json"); console.log(JSON.stringify({error:j.error,message:j.message,token_type:j.token_type,expires:j.expires}))'
+          if [ "$code" != "201" ]; then
+            echo "npm rejected the GitHub OIDC token."
+            echo "On https://www.npmjs.com/package/${name} → Settings → Trusted Publisher"
+            echo "the saved connection must be exactly:"
+            echo "  GitHub Actions / lovrozagar / installgen / release.yml / no environment"
+            exit 1
+          fi
+          NODE_AUTH_TOKEN="$(node -e 'process.stdout.write(require("/tmp/npm-ex.json").token || "")')"
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "exchange succeeded but returned no token"
+            exit 1
+          fi
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > "${HOME}/.npmrc"
+          set +e
+          npm publish --access public --provenance
+          pub=$?
+          set -e
+          if [ "$pub" -eq 0 ]; then
+            exit 0
+          fi
+          if npm view "${name}@${tag}" version >/dev/null 2>&1; then
+            echo "publish raced; ${name}@${tag} is now on npm; treating as success"
+            exit 0
+          fi
+          exit "$pub"
+
+  github-release:
+    name: GitHub Release
+    needs: npmjs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub release $TAG already exists"
+          else
+            gh release create "$TAG" --generate-notes --title "${TAG#v}"
+          fi

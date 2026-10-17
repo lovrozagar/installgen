@@ -1,0 +1,154 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: "1.4.3"
+  # the last PSScriptAnalyzer that loads on the powershell image's pwsh 7.4.2; runners use the same pin
+  PSSA_VERSION: "1.23.0"
+
+jobs:
+  commitlint:
+    name: commitlint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: current
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Lint commit messages
+        run: |
+          bunx commitlint \
+            --from ${{ github.event.pull_request.base.sha }} \
+            --to ${{ github.event.pull_request.head.sha }} \
+            --verbose
+
+  # fmt, lint, check, test: the gates `bun run verify` runs, with host sh as the installer runner
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: current
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run fmt:check
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run test
+
+  # shellcheck and PSScriptAnalyzer on the checked-in renders of the three examples
+  lint-scripts:
+    name: lint-scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: shellcheck
+        working-directory: packages/core/tests/golden
+        run: docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable -s sh raw/install.sh goreleaser/install.sh github/install.sh
+      - name: PSScriptAnalyzer, PowerShell 5.1 and 7.0 syntax
+        working-directory: packages/core
+        run: >-
+          docker run --rm -v "$PWD:/w" -w /w mcr.microsoft.com/powershell pwsh -c
+          "Install-Module PSScriptAnalyzer -RequiredVersion $PSSA_VERSION -Force -Scope CurrentUser;
+          Invoke-ScriptAnalyzer -Path tests/golden -Recurse
+          -Settings @{ExcludeRules=@('PSAvoidUsingWriteHost','PSReviewUnusedParameter');Rules=@{PSUseCompatibleSyntax=@{Enable=\$true;TargetVersions=@('5.1','7.0')}}}
+          -EnableExit"
+
+  # dash, bash, zsh, busybox ash and pwsh, each in Docker, plus shellcheck and PSScriptAnalyzer on a hostile render
+  e2e-docker:
+    name: e2e-docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: current
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run test:e2e
+
+  # the scripts on real hardware: native ARM Linux, Apple Silicon (with Rosetta for the x86_64 shell), Intel macOS
+  e2e-native:
+    name: e2e-native (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04-arm
+            shells: sh,bash
+          - os: macos-latest
+            shells: sh,bash,zsh,arch -x86_64 /bin/sh
+          - os: macos-15-intel
+            shells: sh,bash,zsh
+    env:
+      INSTALLGEN_E2E_SHELLS: ${{ matrix.shells }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: current
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      # arm64 macOS runners may lack Rosetta, which `arch -x86_64 /bin/sh` needs
+      - if: matrix.os == 'macos-latest'
+        run: softwareupdate --install-rosetta --agree-to-license
+      # zsh is not on the image's documented software list; fail loudly rather than skip it
+      - if: startsWith(matrix.os, 'macos')
+        run: command -v zsh && zsh --version
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+
+  # install.ps1 under Windows PowerShell 5.1 and PowerShell 7, on x64 and ARM64: registry PATH, ARM64 fallback,
+  # replacing a running exe
+  e2e-windows:
+    name: e2e-windows (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+    env:
+      INSTALLGEN_E2E_SHELLS: powershell,pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: current
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run test
