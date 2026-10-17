@@ -116,6 +116,8 @@ export interface Served {
 	body: Buffer | string
 	status?: number
 	contentType?: string
+	/** Answer HEAD with 405, like hosts that only serve GET. */
+	noHead?: boolean
 }
 
 export interface LoggedRequest {
@@ -129,6 +131,7 @@ export interface TestServer {
 	url: string
 	set(path: string, served: Served | Buffer | string): void
 	remove(path: string): void
+	get(path: string): Served | undefined
 	log: LoggedRequest[]
 	/** The request paths under a prefix, prefix stripped. */
 	requested(prefix: string): string[]
@@ -145,6 +148,10 @@ export async function startServer(): Promise<TestServer> {
 		const file = files.get(path)
 		if (file === undefined) {
 			res.writeHead(404, { "content-type": "text/plain" }).end("not found\n")
+			return
+		}
+		if (file.noHead && req.method === "HEAD") {
+			res.writeHead(405).end()
 			return
 		}
 		const body = Buffer.from(file.body)
@@ -169,6 +176,7 @@ export async function startServer(): Promise<TestServer> {
 		set: (path, served) =>
 			void files.set(path, typeof served === "string" || Buffer.isBuffer(served) ? { body: served } : served),
 		remove: (path) => void files.delete(path),
+		get: (path) => files.get(path),
 		log,
 		requested: (prefix) =>
 			log.filter((r) => r.path.startsWith(`${prefix}/`)).map((r) => r.path.slice(prefix.length + 1)),
