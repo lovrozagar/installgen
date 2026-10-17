@@ -156,6 +156,34 @@ test.runIf(PWSH)("Assert-HttpsKept refuses https to http and allows the rest", (
 	])
 })
 
+/*
+ * Windows PowerShell 5.1 defines these in script modules. powershell.exe started from pwsh inherits a
+ * PSModulePath with the PowerShell 7 module dirs first, and then 5.1 cannot find them.
+ */
+const SCRIPT_MODULE_COMMANDS = [
+	"Get-FileHash",
+	"New-TemporaryFile",
+	"New-Guid",
+	"Format-Hex",
+	"Import-PowerShellDataFile",
+	"ConvertFrom-SddlString",
+	"Expand-Archive",
+	"Compress-Archive",
+]
+test("install.ps1 calls no script-module command, outside the non-Windows zip seam", () => {
+	const ps1 = render(resolveConfig({ ...config, baseUrl: "https://dl.example.com" }), {}).ps1 as string
+	const seam = ps1.indexOf("# test seam: GNU tar cannot read zip")
+	const windowsBranch = ps1.indexOf("if ($onWindows) {")
+	expect(windowsBranch).toBeGreaterThan(-1)
+	expect(seam).toBeGreaterThan(windowsBranch)
+	const seamEnd = ps1.indexOf("} else {", seam)
+	const calls = SCRIPT_MODULE_COMMANDS.flatMap((name) =>
+		[...ps1.matchAll(new RegExp(`\\b${name}\\b`, "gi"))].map((m) => ({ name, at: m.index })),
+	)
+	expect(calls.filter((c) => !(c.name === "Expand-Archive" && c.at > seam && c.at < seamEnd))).toEqual([])
+	expect(calls.filter((c) => c.name === "Expand-Archive")).toHaveLength(1)
+})
+
 /* the runners come from the environment; say so rather than report an empty file */
 if (PS_RUNNERS.length === 0) {
 	test.skip("install.ps1: no PowerShell runner (INSTALLGEN_E2E_SHELLS=pwsh or INSTALLGEN_E2E_DOCKER=1)", () => {})

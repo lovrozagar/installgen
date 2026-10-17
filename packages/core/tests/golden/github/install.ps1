@@ -270,7 +270,15 @@ param([string]$Version)
 			if (-not $expected) { Fail "no checksum for $assetFile in $checksumsUrl" }
 			$expected = $expected.ToLowerInvariant()
 			if ($expected -cnotmatch '^[0-9a-f]{64}$') { Fail "malformed checksum for $assetFile in $checksumsUrl" }
-			$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $download).Hash.ToLowerInvariant()
+			# hash in .NET: 5.1 defines its hash cmdlet in a script module, which a PSModulePath inherited from pwsh hides
+			$sha = [Security.Cryptography.SHA256]::Create()
+			$stream = [IO.File]::OpenRead($download)
+			try {
+				$actual = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+			} finally {
+				$stream.Dispose()
+				$sha.Dispose()
+			}
 			if ($actual -ne $expected) { Fail "checksum mismatch for ${assetFile}: expected $expected, got $actual" }
 			Write-Ok 'Verified' 'sha256'
 		} else {
