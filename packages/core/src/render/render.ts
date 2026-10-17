@@ -100,7 +100,8 @@ export function placeholders(
 			MODIFY_PATH: resolved.modifyPath ? "1" : "0",
 			MESSAGE: shLiteral(message),
 			SH_URL: shLiteral(resolved.scriptUrls.sh),
-			PS1_URL: shLiteral(resolved.scriptUrls.ps1),
+			/* with no Windows build there is no install.ps1 to point Git Bash users at */
+			PS1_URL: shLiteral(windows.length > 0 ? resolved.scriptUrls.ps1 : ""),
 			CURL_FLAGS: resolved.https ? "--proto '=https' --tlsv1.2" : "",
 			WGET_FLAGS: resolved.https ? "--https-only" : "",
 			PLATFORMS: unix.map((p) => p.platform).join(" "),

@@ -67,6 +67,13 @@ describe("render", () => {
 		expect(win.ps1).toBeDefined()
 	})
 
+	test("without Windows platforms the sh hint has no ps1 URL", () => {
+		expect(placeholders(resolve({ platforms: ["linux/amd64"] }), {}).sh.PS1_URL).toBe("''")
+		expect(placeholders(resolve({ platforms: ["linux/amd64", "windows/arm64"] }), {}).sh.PS1_URL).toBe(
+			"'https://dl.example.com/my-cli/install.ps1'",
+		)
+	})
+
 	test("the platform list and cases only name the configured platforms", () => {
 		const values = placeholders(resolve({ platforms: ["linux/amd64", "darwin/arm64", "windows/arm64"] }), {})
 		expect(values.sh.PLATFORMS).toBe("linux/amd64 darwin/arm64")
