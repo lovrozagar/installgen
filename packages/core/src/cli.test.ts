@@ -184,8 +184,11 @@ describe("build", () => {
 		const expected = render(resolveConfig({ ...config, baseUrl: "https://dl.example.com/my-cli" }), {})
 		expect(readFileSync(join(dir, "installers/install.sh"), "utf8")).toBe(expected.sh)
 		expect(readFileSync(join(dir, "installers/install.ps1"), "utf8")).toBe(expected.ps1)
-		expect(statSync(join(dir, "installers/install.sh")).mode & 0o777).toBe(0o755)
-		expect(statSync(join(dir, "installers/install.ps1")).mode & 0o777).toBe(0o644)
+		/* Windows has no Unix modes */
+		if (process.platform !== "win32") {
+			expect(statSync(join(dir, "installers/install.sh")).mode & 0o777).toBe(0o755)
+			expect(statSync(join(dir, "installers/install.ps1")).mode & 0o777).toBe(0o644)
+		}
 		expect(r.out).toContain(join("installers", "install.sh"))
 		expect(r.out).toContain(join("installers", "install.ps1"))
 		expect(r.err).not.toContain("warning")
@@ -510,6 +513,13 @@ describe("start", () => {
 		expect(written).toHaveLength(1)
 		expect(exits).toEqual([0])
 		expect(errs.join("")).not.toContain("EPIPE")
+	})
+
+	test("EOF, Windows' closed pipe, is quiet too", async () => {
+		const { proc, exits } = fakeProc(sandbox(), undefined)
+		await start(["--version"], proc)
+		proc.stdout.emit("error", errno("EOF"))
+		expect(exits).toEqual([0])
 	})
 
 	test("EPIPE on stderr is quiet too", async () => {

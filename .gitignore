@@ -18,3 +18,7 @@ installers/
 
 # local
 .tmp/
+
+# prepack copies the root README and LICENSE into the package
+packages/core/README.md
+packages/core/LICENSE

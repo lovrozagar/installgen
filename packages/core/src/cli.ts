@@ -158,8 +158,9 @@ export interface Proc {
 export async function start(argv: readonly string[] = process.argv.slice(2), proc: Proc = process): Promise<void> {
 	/* a reader that closes early (`| head`, `| grep -q`) is done listening: stop writing and leave quietly */
 	let closed = false
+	/* EPIPE, or EOF where Windows reports a closed pipe that way */
 	const onError = (error: NodeJS.ErrnoException) => {
-		if (error.code !== "EPIPE") throw error
+		if (error.code !== "EPIPE" && error.code !== "EOF") throw error
 		closed = true
 		proc.exit(Number(proc.exitCode ?? 0))
 	}

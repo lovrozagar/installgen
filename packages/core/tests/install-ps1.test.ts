@@ -76,8 +76,10 @@ function install(runner: Runner, box: Sandbox, url: string, options: InstallOpti
 			HOME: box.home,
 			USERPROFILE: box.home,
 			PATH: runner.systemPath,
-			...(WIN ? { SystemRoot: process.env.SystemRoot ?? "C:\\Windows", TEMP: box.root, TMP: box.root } : {}),
+			...(WIN ? { TEMP: box.root, TMP: box.root } : {}),
 			...(WIN && !options.modify ? { MY_CLI_NO_MODIFY_PATH: "1" } : {}),
+			/* GetFolderPath('UserProfile') reads the real profile on Windows, not USERPROFILE: point the install into the sandbox */
+			...(WIN ? { MY_CLI_INSTALL_DIR: join(box.home, ".my-cli", "bin") } : {}),
 			...options.env,
 		},
 	})
@@ -374,6 +376,29 @@ describe.each(PS_RUNNERS)("install.ps1 under $name", (runner) => {
 			expect(server.requested(rel.baseUrl.slice(server.url.length))).toContain(rel.asset("windows/amd64", "1.2.3"))
 		})
 
+		test("the default install dir is under the user profile", async () => {
+			const box = sandbox()
+			const rel = release()
+			const probe = await runner.run({
+				command: "[Environment]::GetFolderPath('UserProfile')",
+				cwd: box.root,
+				env: { PATH: runner.systemPath },
+			})
+			const dir = join(probe.stdout.trim(), ".my-cli")
+			try {
+				const r = await runner.run({
+					command: `irm ${q(rel.ps1Url)} | iex`,
+					cwd: box.root,
+					env: { PATH: runner.systemPath, TEMP: box.root, TMP: box.root, MY_CLI_NO_MODIFY_PATH: "1" },
+				})
+				expect(r.status, output(r)).toBe(0)
+				expect(readFileSync(join(dir, "bin", "my-cli.exe"))).toEqual(fakeBinary("my-cli", "1.2.3", "windows"))
+				expect(r.stdout).toContain("~\\.my-cli\\bin\\my-cli.exe")
+			} finally {
+				rmSync(dir, { recursive: true, force: true })
+			}
+		})
+
 		test("a running exe is renamed aside and replaced", async () => {
 			const box = sandbox()
 			/* a real executable that stays running: ping, served as the raw asset */
@@ -395,8 +420,8 @@ describe.each(PS_RUNNERS)("install.ps1 under $name", (runner) => {
 					HOME: box.home,
 					USERPROFILE: box.home,
 					PATH: runner.systemPath,
-					SystemRoot: process.env.SystemRoot ?? "C:\\Windows",
 					MY_CLI_NO_MODIFY_PATH: "1",
+					MY_CLI_INSTALL_DIR: join(box.home, ".my-cli", "bin"),
 				},
 			})
 			expect(r.status, output(r)).toBe(0)

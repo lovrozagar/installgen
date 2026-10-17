@@ -78,6 +78,38 @@ function exec(
 	})
 }
 
+/* What Windows PowerShell needs to start and reach the network; the rest of the CI environment stays out */
+const WINDOWS_BASE = [
+	"SystemRoot",
+	"windir",
+	"ComSpec",
+	"PATHEXT",
+	"SystemDrive",
+	"ProgramData",
+	"ProgramFiles",
+	"ProgramFiles(x86)",
+	"CommonProgramFiles",
+	"APPDATA",
+	"LOCALAPPDATA",
+	"PSModulePath",
+	"NUMBER_OF_PROCESSORS",
+	"PROCESSOR_ARCHITECTURE",
+	"OS",
+	"USERNAME",
+	"USERDOMAIN",
+	"COMPUTERNAME",
+	"TEMP",
+	"TMP",
+]
+function windowsBase(): Record<string, string> {
+	if (process.platform !== "win32") return {}
+	const out: Record<string, string> = {}
+	for (const [k, v] of Object.entries(process.env)) {
+		if (v !== undefined && WINDOWS_BASE.some((name) => name.toLowerCase() === k.toLowerCase())) out[k] = v
+	}
+	return out
+}
+
 function hostRunner(shell: string): Runner {
 	const kind = shell === "pwsh" || shell === "powershell" ? "ps1" : "sh"
 	return {
@@ -88,7 +120,7 @@ function hostRunner(shell: string): Runner {
 		systemPath: process.env.PATH ?? "",
 		tty: process.platform !== "win32",
 		run({ command, env, cwd, tty }) {
-			const full = { ...env, TERM: env.TERM ?? "xterm-256color" }
+			const full = { ...windowsBase(), ...env, TERM: env.TERM ?? "xterm-256color" }
 			if (kind === "ps1") {
 				const args = ["-NoProfile", "-NonInteractive", "-Command", command]
 				if (!tty) return exec(shell, args, { env: full, cwd, timeout: 50_000 })

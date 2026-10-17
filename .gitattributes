@@ -1,0 +1,2 @@
+# The generated scripts, the templates and the golden files must stay LF on every checkout, Windows included.
+* text=auto eol=lf

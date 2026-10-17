@@ -53,7 +53,7 @@ describe("bin/installgen.js", () => {
 		expect(code).toBe(0)
 		const r = spawnSync(process.execPath, [BIN, "build"], { cwd: dir, encoding: "utf8" })
 		expect(r.status, r.stderr).toBe(0)
-		expect(statSync(join(dir, "installers/install.sh")).mode & 0o777).toBe(0o755)
+		if (process.platform !== "win32") expect(statSync(join(dir, "installers/install.sh")).mode & 0o777).toBe(0o755)
 		expect(readFileSync(join(dir, "installers/install.ps1"), "utf8")).toContain("my-cli_Windows_")
 		const syntax = spawnSync("sh", ["-n", join(dir, "installers/install.sh")], { encoding: "utf8" })
 		expect(syntax.status, syntax.stderr).toBe(0)
