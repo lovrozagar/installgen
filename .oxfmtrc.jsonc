@@ -1,0 +1,31 @@
+{
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"printWidth": 120,
+	"useTabs": true,
+	"semi": false,
+	"singleQuote": false,
+	"ignorePatterns": [
+		"dist/**",
+		"coverage/**",
+		"**/dist/**",
+		"**/coverage/**",
+		"**/test-results/**",
+		"**/playwright-report/**",
+		"**/_gen/**",
+		"*.lock",
+		".tmp/**",
+		".agents/**",
+		".claude/**",
+		".codex/**",
+		".gemini/**",
+		".grok/**",
+		".rulesync/**",
+		".mcp.json",
+		"AGENTS.md",
+		"CLAUDE.md",
+		"GEMINI.md",
+		".oxfmtrc.jsonc",
+		"**/tests/golden/**",
+		".tmp/**"
+	]
+}
