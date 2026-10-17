@@ -545,15 +545,24 @@ describe.each(SH_RUNNERS)("install.sh under $name", (runner) => {
 			}
 		})
 
-		test.runIf(runner.tty)("a UTF-8 TTY gets check rows, color, and the bar erased", async () => {
-			const box = sandbox()
-			const rel = release()
-			const r = await install(runner, box, rel.shUrl, { tty: true, env: { LANG: "C.UTF-8" } })
-			expect(r.status, output(r)).toBe(0)
-			expect(r.stdout).toContain(`${CHECK}`)
-			expect(r.stdout).toContain("\x1b[32m")
-			expect(r.stdout).toContain(ERASE)
-		})
+		test.runIf(runner.tty)(
+			"a UTF-8 TTY gets check rows, color, and curl's bar erased (wget stays silent)",
+			async () => {
+				const box = sandbox()
+				const rel = release()
+				const r = await install(runner, box, rel.shUrl, { tty: true, env: { LANG: "C.UTF-8" } })
+				expect(r.status, output(r)).toBe(0)
+				expect(r.stdout).toContain(`${CHECK}`)
+				expect(r.stdout).toContain("\x1b[32m")
+				if (runner.fetch === "curl") {
+					expect(r.stdout).toMatch(/#+ +100\.0%/)
+					expect(r.stdout).toContain(ERASE)
+				} else {
+					expect(r.stdout).not.toContain("#")
+					expect(r.stdout).not.toContain(ERASE)
+				}
+			},
+		)
 
 		test.runIf(runner.tty)("a C locale TTY uses ASCII glyphs", async () => {
 			const box = sandbox()

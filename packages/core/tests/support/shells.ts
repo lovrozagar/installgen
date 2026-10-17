@@ -126,17 +126,17 @@ function dockerRunner(
 		shell,
 		fetch,
 		systemPath: CONTAINER_PATH,
-		tty: kind === "sh" && image === IMAGE,
+		/* every image ships `script`: util-linux in Debian and the pwsh image, an applet in busybox */
+		tty: true,
 		run({ command, env, cwd, tty }) {
 			if (image === IMAGE) ensureImage()
 			const mounts = [...new Set([cwd, env.HOME].filter((d): d is string => !!d))].flatMap((d) => ["-v", `${d}:${d}`])
 			const envArgs = Object.entries({ TERM: "xterm-256color", ...env }).flatMap(([k, v]) => ["-e", `${k}=${v}`])
-			const inner =
-				kind === "ps1"
-					? ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command]
-					: tty
-						? ["script", "-qec", command, "/dev/null"]
-						: ["sh", "-c", command]
+			const run =
+				kind === "ps1" ? ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command] : ["sh", "-c", command]
+			/* busybox `script` has no -e; its exit status is the child's anyway */
+			const ttyFlags = image === BUSYBOX_IMAGE ? "-qc" : "-qec"
+			const inner = tty ? ["script", ttyFlags, run.map(shQuote).join(" "), "/dev/null"] : run
 			const args = ["run", "--rm", "--network", "host", "-u", `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`]
 			return exec("docker", [...args, ...mounts, ...envArgs, "-w", cwd, image, ...inner], { timeout: 55_000 })
 		},
