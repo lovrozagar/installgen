@@ -1,7 +1,7 @@
 import { defineConfig } from "@lovrozagar/installgen"
 
 /*
- * Raw binaries on your own host (an R2 or S3 bucket, a CDN):
+ * Raw binaries on your own host:
  *
  *   1.2.3/my-cli-linux-amd64
  *   1.2.3/my-cli-windows-amd64.exe

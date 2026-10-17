@@ -41,11 +41,8 @@ That is a real run of a generated `install.sh` on a terminal, with the test serv
   - [Checksum formats](#checksum-formats)
   - [Old Windows PowerShell 5.1](#old-windows-powershell-51)
 - [Hosting](#hosting)
-  - [Bucket layout](#bucket-layout)
+  - [Layout](#layout)
   - [Release order](#release-order)
-  - [Cache-Control and Content-Type](#cache-control-and-content-type)
-  - [Upload recipes](#upload-recipes)
-  - [Vanity URL](#vanity-url)
 - [Security model](#security-model)
 - [Non-goals](#non-goals)
 - [Library exports](#library-exports)
@@ -309,9 +306,9 @@ The script switches on TLS 1.2 itself, but only after the first `irm` has fetche
 
 ## Hosting
 
-Any https host works: an R2 or S3 bucket, a CDN, GitHub Releases. Avoid rate-limited `r2.dev` URLs for anything public; attach a custom domain to the bucket.
+The scripts fetch from `baseUrl` over https, or http on loopback. Where those files live is up to you.
 
-### Bucket layout
+### Layout
 
 With the `goreleaser` preset:
 
@@ -336,51 +333,14 @@ my-cli/
 
 The scripts only change when your config does; upload them again after a `build` that changed them.
 
-### Cache-Control and Content-Type
-
-| object                      | Cache-Control                         | Content-Type                |
-| --------------------------- | ------------------------------------- | --------------------------- |
-| `install.sh`, `install.ps1` | `public, max-age=300`                 | `text/plain; charset=utf-8` |
-| `latest`                    | `public, max-age=60`                  | `text/plain; charset=utf-8` |
-| versioned archives and sums | `public, max-age=31536000, immutable` | `application/octet-stream`  |
-
-A short TTL on `latest` and the scripts lets a release reach users in minutes; versioned files never change, so they cache forever.
-
-### Upload recipes
-
-R2 with rclone (an `r2` remote configured for your account):
-
-```bash
-rclone copy dist/release/ r2:my-bucket/my-cli/v1.2.3/ --header-upload "Cache-Control: public, max-age=31536000, immutable"
-printf 'v1.2.3\n' | rclone rcat r2:my-bucket/my-cli/latest --header-upload "Cache-Control: public, max-age=60" --header-upload "Content-Type: text/plain; charset=utf-8"
-rclone copy installers/ r2:my-bucket/my-cli/ --header-upload "Cache-Control: public, max-age=300" --header-upload "Content-Type: text/plain; charset=utf-8"
-```
-
-R2 with wrangler:
-
-```bash
-wrangler r2 object put my-bucket/my-cli/install.sh --file installers/install.sh --content-type "text/plain; charset=utf-8" --cache-control "public, max-age=300" --remote
-wrangler r2 object put my-bucket/my-cli/latest --file latest.txt --content-type "text/plain; charset=utf-8" --cache-control "public, max-age=60" --remote
-```
-
-S3, or R2 through its S3 API (add `--endpoint-url https://<account-id>.r2.cloudflarestorage.com` for R2):
-
-```bash
-aws s3 cp dist/release/ s3://my-bucket/my-cli/v1.2.3/ --recursive --cache-control "public, max-age=31536000, immutable"
-aws s3 cp installers/install.sh s3://my-bucket/my-cli/install.sh --content-type "text/plain; charset=utf-8" --cache-control "public, max-age=300"
-aws s3 cp latest.txt s3://my-bucket/my-cli/latest --content-type "text/plain; charset=utf-8" --cache-control "public, max-age=60"
-```
-
-GitHub Releases, with the `github` preset: upload the scripts and a `version.txt` holding the tag to every release, so `releases/latest/download/` serves the newest of each. GitHub sets its own headers; `latest` is a redirect that curl and `irm` follow.
+With the `github` preset, upload the scripts and a `version.txt` holding the tag to every release, so `releases/latest/download/` serves the newest of each:
 
 ```bash
 printf 'v1.2.3\n' > version.txt
 gh release upload v1.2.3 installers/install.sh installers/install.ps1 version.txt --clobber
 ```
 
-### Vanity URL
-
-To give users `curl -fsSL https://get.my-cli.dev | sh`, redirect that URL to `install.sh` (a Cloudflare redirect rule, a CDN rewrite) and set `scriptUrls` to the short form, so the scripts print it in their hints. curl's `-L` and `irm` follow redirects; keep every hop on https.
+If users fetch the scripts from a shorter URL that redirects to them, set `scriptUrls` to it, so the scripts print it in their hints.
 
 ## Security model
 
