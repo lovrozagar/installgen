@@ -115,9 +115,9 @@ describe("usage", () => {
 	})
 })
 
-describe("init", () => {
-	const example = (preset: string) => readFileSync(join(PACKAGE_DIR, "examples", `${preset}.config.ts`), "utf8")
+const example = (preset: string) => readFileSync(join(PACKAGE_DIR, "examples", `${preset}.config.ts`), "utf8")
 
+describe("init", () => {
 	test("writes the raw preset as .mts where no package.json says type module", async () => {
 		const dir = sandbox()
 		const r = await cli(["init"], dir)
@@ -445,10 +445,10 @@ describe("check", () => {
 	})
 })
 
-describe("terminal output", () => {
-	const build = (options: { isTTY: boolean; env?: Record<string, string> }) =>
-		cli(["build"], sandbox({ "installgen.config.mjs": configSource("https://dl.example.com/my-cli") }), options)
+const build = (options: { isTTY: boolean; env?: Record<string, string> }) =>
+	cli(["build"], sandbox({ "installgen.config.mjs": configSource("https://dl.example.com/my-cli") }), options)
 
+describe("terminal output", () => {
 	test("a TTY gets check marks and color", async () => {
 		const r = await build({ isTTY: true })
 		expect(r.out).toContain("✓")

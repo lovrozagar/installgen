@@ -7,6 +7,7 @@ import { afterAll, describe, expect, test } from "vitest"
 import { run } from "../src/cli.ts"
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "../bin/installgen.js")
+const sink = () => {}
 const dirs: string[] = []
 afterAll(() => {
 	for (const d of dirs) rmSync(d, { recursive: true, force: true })
@@ -24,7 +25,6 @@ describe("bin/installgen.js", () => {
 		/* outside the repo, with no node_modules: the config's package import resolves only through the hook */
 		const dir = mkdtempSync(join(tmpdir(), "installgen-bin-"))
 		dirs.push(dir)
-		const sink = () => {}
 		const code = await run(["init", "--preset", "goreleaser"], {
 			cwd: dir,
 			env: {},

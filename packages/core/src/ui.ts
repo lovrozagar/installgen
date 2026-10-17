@@ -15,12 +15,12 @@ export interface UiIo {
 }
 
 const ESC = String.fromCharCode(27)
+const row = (glyph: string, label: string, value: string) => `${glyph} ${label.padEnd(13)} ${value}\n`
 
 export function createUi(io: UiIo): Ui {
 	const color = io.isTTY && !io.env.NO_COLOR
 	const paint = (code: number, text: string) => (color ? `${ESC}[${code}m${text}${ESC}[0m` : text)
 	const mark = { ok: io.isTTY ? "✓" : "+", bad: io.isTTY ? "✗" : "x" }
-	const row = (glyph: string, label: string, value: string) => `${glyph} ${label.padEnd(13)} ${value}\n`
 	return {
 		ok: (label, value) => io.stdout(row(paint(32, mark.ok), label, value)),
 		bad: (label, value) => io.stdout(row(paint(31, mark.bad), label, value)),
