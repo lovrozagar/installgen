@@ -32,6 +32,11 @@ describe("registerNodeHook", () => {
 		})
 	})
 
+	test("returns the deregister handle", () => {
+		const handle = { deregister: () => {} }
+		expect(registerNodeHook("file:///pkg/dist/index.js", () => handle)).toBe(handle)
+	})
+
 	test("passes every other specifier on", () => {
 		const { register, hooks } = capture()
 		registerNodeHook("file:///pkg/dist/index.js", register)

@@ -22,6 +22,9 @@ export const ALL_PLATFORMS: readonly Platform[] = [
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const ENV_PREFIX = /^[A-Z_][A-Z0-9_]*$/
+const TAG_PREFIX = /^[A-Za-z0-9._-]*$/
+/* Each segment of installDir after ~/: rendered into sh and ps1 paths and shell profile lines */
+const DIR_SEGMENT = /^[A-Za-z0-9._ -]+$/
 const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"])
 const SENTINELS = new RegExp(`(${VERSION_SENTINEL}|${TAG_SENTINEL})`)
@@ -147,10 +150,19 @@ export function resolveConfig(input: InstallgenConfig): ResolvedConfig {
 	checkRelative("latestPath", latestPath)
 
 	const tagPrefix = string(config, "tagPrefix") ?? "v"
+	if (!TAG_PREFIX.test(tagPrefix))
+		fail(`config.tagPrefix must match ${TAG_PREFIX.source}, got ${JSON.stringify(tagPrefix)}`)
 
 	const installDir = string(config, "installDir") ?? `~/.${name}/bin`
-	if (!installDir.startsWith("~/") || installDir.length === 2) {
-		fail(`config.installDir must start with ~/ and name a directory, got ${JSON.stringify(installDir)}`)
+	const dirSegments = installDir.split("/").slice(1)
+	if (
+		!installDir.startsWith("~/") ||
+		!dirSegments.every((seg) => DIR_SEGMENT.test(seg) && seg !== "." && seg !== "..")
+	) {
+		fail(
+			`config.installDir must be ~/ followed by directory names of letters, digits, space, ".", "_" or "-" ` +
+				`(no "." or ".." segments), got ${JSON.stringify(installDir)}`,
+		)
 	}
 
 	const derived = name.toUpperCase().replace(/[^A-Z0-9]/g, "_")

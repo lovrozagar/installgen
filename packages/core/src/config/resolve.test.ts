@@ -344,8 +344,41 @@ describe("validation errors", () => {
 		expect(() => resolveConfig({ ...base, envPrefix })).toThrow(/envPrefix/)
 	})
 
-	test.each(["/opt/my-cli", "~", "~/", "bin", "$HOME/bin", "~user/bin"])("an invalid installDir %j", (installDir) => {
+	test.each([
+		"/opt/my-cli",
+		"~",
+		"~/",
+		"bin",
+		"$HOME/bin",
+		"~user/bin",
+		"~//x",
+		"~/bin/",
+		"~/../etc",
+		"~/./bin",
+		"~/a/../b",
+		"~/a\\b",
+		"~/$x",
+		'~/a"b',
+		"~/a'b",
+		"~/a`b",
+	])("an invalid installDir %j", (installDir) => {
 		expect(() => resolveConfig({ ...base, installDir })).toThrow(/installDir/)
+	})
+
+	test.each([
+		["~/.local/bin", ".local/bin"],
+		["~/My Tools/bin", "My Tools/bin"],
+		["~/a.b_c-d/..x", "a.b_c-d/..x"],
+	])("a valid installDir %j", (installDir, rel) => {
+		expect(resolveConfig({ ...base, installDir }).installDir).toBe(rel)
+	})
+
+	test.each(["v*", "$", "'", "v ", " ", "v/"])("an invalid tagPrefix %j", (tagPrefix) => {
+		expect(() => resolveConfig({ ...base, tagPrefix })).toThrow(/tagPrefix/)
+	})
+
+	test.each(["", "v", "release-", "app_v1."])("a valid tagPrefix %j", (tagPrefix) => {
+		expect(resolveConfig({ ...base, tagPrefix }).tagPrefix).toBe(tagPrefix)
 	})
 
 	test.each([

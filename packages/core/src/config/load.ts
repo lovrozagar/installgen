@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url"
 import { InstallgenError } from "../errors.ts"
 import type { InstallgenConfig } from "./define-config.ts"
 import { registerBunHook, type BunLike } from "./hooks/bun.ts"
-import { registerNodeHook } from "./hooks/node.ts"
+import { registerNodeHook, type RegisterHooks } from "./hooks/node.ts"
 
 export const CONFIG_FILES = [
 	"installgen.config.ts",
@@ -37,6 +37,8 @@ export interface LoadOptions {
 	/** The running package's entry, which the config's `@lovrozagar/installgen` import resolves to. */
 	selfUrl?: string
 	importModule?: Importer
+	/** Node's `module.registerHooks`. */
+	registerHooks?: RegisterHooks
 }
 
 export interface LoadedConfig {
@@ -44,8 +46,7 @@ export interface LoadedConfig {
 	config: InstallgenConfig
 }
 
-/* Node strips types from .ts without a flag from 22.18 */
-const TYPE_STRIPPING = [22, 18] as const
+/* Node strips types from .ts without a flag from 22.18, and on 23 from 23.6 */
 const CJS_SYNTAX = /Unexpected token 'export'|Cannot use import statement outside a module/
 
 function find(cwd: string, configPath: string | undefined): string {
@@ -63,9 +64,11 @@ function find(cwd: string, configPath: string | undefined): string {
 	)
 }
 
-function olderThan(version: string, [major, minor]: readonly [number, number]): boolean {
-	const [m = 0, n = 0] = version.split(".").map(Number)
-	return m < major || (m === major && n < minor)
+function stripsTypes(version: string): boolean {
+	const [major = 0, minor = 0] = version.split(".").map(Number)
+	if (major === 22) return minor >= 18
+	if (major === 23) return minor >= 6
+	return major > 23
 }
 
 export async function loadConfig(options: LoadOptions): Promise<LoadedConfig> {
@@ -75,19 +78,17 @@ export async function loadConfig(options: LoadOptions): Promise<LoadedConfig> {
 	const importModule = options.importModule ?? ((url) => import(url) as Promise<Record<string, unknown>>)
 	const selfUrl = options.selfUrl ?? new URL("../index.js", import.meta.url).href
 
-	if (
-		runtime.runtime === "node" &&
-		(ext === ".ts" || ext === ".mts") &&
-		olderThan(runtime.nodeVersion, TYPE_STRIPPING)
-	) {
+	if (runtime.runtime === "node" && (ext === ".ts" || ext === ".mts") && !stripsTypes(runtime.nodeVersion)) {
 		throw new InstallgenError(
-			`a TypeScript config needs Node >= ${TYPE_STRIPPING.join(".")} (this is ${runtime.nodeVersion}); ` +
+			`a TypeScript config needs Node >= 22.18 (23.6 on Node 23; this is ${runtime.nodeVersion}); ` +
 				"run `bunx --bun @lovrozagar/installgen` instead, or upgrade Node",
 		)
 	}
 
+	/* Bun's plugin stays for the process; Node's hook goes once the config is imported */
+	let hook: ReturnType<RegisterHooks> | undefined
 	if (runtime.bun) await registerBunHook(runtime.bun, selfUrl, importModule)
-	else registerNodeHook(selfUrl)
+	else hook = registerNodeHook(selfUrl, options.registerHooks)
 
 	let mod: Record<string, unknown>
 	try {
@@ -102,6 +103,8 @@ export async function loadConfig(options: LoadOptions): Promise<LoadedConfig> {
 			)
 		}
 		throw new InstallgenError(`failed to load ${path}: ${message}`, { cause: error })
+	} finally {
+		hook?.deregister()
 	}
 
 	const config = mod.default
