@@ -1,5 +1,5 @@
-import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
+import { spawn, spawnSync } from "node:child_process"
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -19,6 +19,24 @@ describe("bin/installgen.js", () => {
 		const r = spawnSync(process.execPath, [BIN, "--help"], { encoding: "utf8" })
 		expect(r.status, r.stderr).toBe(0)
 		expect(r.stdout).toContain("Usage: installgen <command>")
+	})
+
+	test("a reader that closes early (| head) gets no EPIPE crash", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "installgen-bin-"))
+		dirs.push(dir)
+		writeFileSync(
+			join(dir, "installgen.config.mjs"),
+			'export default { name: "my-cli", baseUrl: "https://dl.example.com", assetPath: ({ version, os, arch }) => `${version}/${os}-${arch}` }\n',
+		)
+		const child = spawn(process.execPath, [BIN, "check", "--list"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"] })
+		/* close the read end before the child writes, so every write hits a closed pipe */
+		child.stdout.destroy()
+		let stderr = ""
+		child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d))
+		const code = await new Promise<number | null>((resolve) => child.on("close", resolve))
+		expect(stderr).not.toContain("EPIPE")
+		expect(stderr).not.toMatch(/^\s+at /m)
+		expect(code).toBe(0)
 	})
 
 	test("init, then the real bin builds the .mts it wrote with no local install", async () => {

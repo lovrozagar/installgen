@@ -2,9 +2,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { PassThrough } from "node:stream"
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import { publish, startServer, type TestServer } from "../tests/support/server.ts"
-import { run, start, type Io } from "./cli.ts"
+import { run, start, type Io, type Proc } from "./cli.ts"
 import type { InstallgenConfig } from "./config/define-config.ts"
 import { resolveConfig } from "./config/resolve.ts"
 import { render } from "./render/render.ts"
@@ -475,7 +476,57 @@ describe("terminal output", () => {
 	})
 })
 
+/* a process whose stdout fails on its first write the way a closed pipe does */
+function fakeProc(cwd: string, error: NodeJS.ErrnoException | undefined) {
+	const written: string[] = []
+	const exits: number[] = []
+	const stdout = new PassThrough()
+	stdout.write = ((chunk: string) => {
+		written.push(String(chunk))
+		if (error) stdout.emit("error", error)
+		return true
+	}) as typeof stdout.write
+	const stderr = new PassThrough()
+	const errs: string[] = []
+	stderr.write = ((chunk: string) => (errs.push(String(chunk)), true)) as typeof stderr.write
+	const proc: Proc = {
+		stdout,
+		stderr,
+		cwd: () => cwd,
+		env: {},
+		exitCode: undefined,
+		exit: (code) => void exits.push(code ?? 0),
+	}
+	return { proc, written, exits, errs }
+}
+
 describe("start", () => {
+	const errno = (code: string) => Object.assign(new Error(`write ${code}`), { code })
+
+	test("EPIPE on stdout (| head) stops writing and exits quietly with the current code", async () => {
+		const dir = sandbox({ "installgen.config.mjs": configSource("https://dl.example.com/my-cli") })
+		const { proc, written, exits, errs } = fakeProc(dir, errno("EPIPE"))
+		await start(["build"], proc)
+		expect(written).toHaveLength(1)
+		expect(exits).toEqual([0])
+		expect(errs.join("")).not.toContain("EPIPE")
+	})
+
+	test("EPIPE on stderr is quiet too", async () => {
+		const { proc, exits } = fakeProc(sandbox(), undefined)
+		await start(["--version"], proc)
+		proc.exitCode = 2
+		proc.stderr.emit("error", errno("EPIPE"))
+		expect(exits).toEqual([2])
+	})
+
+	test("any other stream error surfaces", async () => {
+		const { proc } = fakeProc(sandbox(), undefined)
+		await start(["--version"], proc)
+		const other = errno("EIO")
+		expect(() => proc.stdout.emit("error", other)).toThrow(other)
+	})
+
 	test("runs against the real process and sets the exit code", async () => {
 		const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
 		const before = process.exitCode

@@ -145,12 +145,34 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
 	}
 }
 
-export async function start(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
-	process.exitCode = await run(argv, {
-		cwd: process.cwd(),
-		env: process.env,
-		stdout: (text) => void process.stdout.write(text),
-		stderr: (text) => void process.stderr.write(text),
-		isTTY: process.stdout.isTTY === true,
+/** The slice of `process` that `start` touches. */
+export interface Proc {
+	stdout: NodeJS.WritableStream & { isTTY?: boolean }
+	stderr: NodeJS.WritableStream
+	cwd(): string
+	env: Record<string, string | undefined>
+	exitCode?: number | string | null | undefined
+	exit(code?: number): void
+}
+
+export async function start(argv: readonly string[] = process.argv.slice(2), proc: Proc = process): Promise<void> {
+	/* a reader that closes early (`| head`, `| grep -q`) is done listening: stop writing and leave quietly */
+	let closed = false
+	const onError = (error: NodeJS.ErrnoException) => {
+		if (error.code !== "EPIPE") throw error
+		closed = true
+		proc.exit(Number(proc.exitCode ?? 0))
+	}
+	proc.stdout.on("error", onError)
+	proc.stderr.on("error", onError)
+	const write = (stream: NodeJS.WritableStream) => (text: string) => {
+		if (!closed) stream.write(text)
+	}
+	proc.exitCode = await run(argv, {
+		cwd: proc.cwd(),
+		env: proc.env,
+		stdout: write(proc.stdout),
+		stderr: write(proc.stderr),
+		isTTY: proc.stdout.isTTY === true,
 	})
 }
