@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+*.tsbuildinfo
+
+# testing
+coverage/
+
+# generated installers
+installers/
+
+# editor / os
+.DS_Store
+*.swp
+*.log
+
+# local
+.tmp/

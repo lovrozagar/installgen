@@ -1,0 +1,49 @@
+{
+	"name": "@lovrozagar/installgen",
+	"version": "0.1.0",
+	"description": "Generate curl | sh and irm | iex installers for prebuilt CLI binaries on any host",
+	"keywords": ["cli", "installer", "install.sh", "install.ps1", "binaries", "release"],
+	"homepage": "https://github.com/lovrozagar/installgen#readme",
+	"bugs": {
+		"url": "https://github.com/lovrozagar/installgen/issues"
+	},
+	"license": "MIT",
+	"author": "lovrozagar",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/lovrozagar/installgen.git",
+		"directory": "packages/core"
+	},
+	"bin": {
+		"installgen": "./bin/installgen.js"
+	},
+	"files": ["bin", "dist", "templates", "README.md", "LICENSE"],
+	"type": "module",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"prepack": "bun run build && cp ../../README.md ../../LICENSE .",
+		"test": "bun run build && vitest run --coverage",
+		"test:bun": "vitest run",
+		"type:check": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"@vitest/coverage-v8": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"engines": {
+		"node": ">=22.18"
+	}
+}
