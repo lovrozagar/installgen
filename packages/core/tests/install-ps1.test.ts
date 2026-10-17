@@ -172,13 +172,17 @@ const SCRIPT_MODULE_COMMANDS = [
 ]
 test("install.ps1 calls no script-module command, outside the non-Windows zip seam", () => {
 	const ps1 = render(resolveConfig({ ...config, baseUrl: "https://dl.example.com" }), {}).ps1 as string
-	const seam = ps1.indexOf("# test seam: GNU tar cannot read zip")
-	const windowsBranch = ps1.indexOf("if ($onWindows) {")
+	const code = ps1
+		.split("\n")
+		.filter((line) => !line.trimStart().startsWith("#"))
+		.join("\n")
+	const windowsBranch = code.indexOf("if ($onWindows) {")
+	const seam = code.indexOf("} elseif ($format -eq 'zip') {", windowsBranch)
 	expect(windowsBranch).toBeGreaterThan(-1)
 	expect(seam).toBeGreaterThan(windowsBranch)
-	const seamEnd = ps1.indexOf("} else {", seam)
+	const seamEnd = code.indexOf("} else {", seam)
 	const calls = SCRIPT_MODULE_COMMANDS.flatMap((name) =>
-		[...ps1.matchAll(new RegExp(`\\b${name}\\b`, "gi"))].map((m) => ({ name, at: m.index })),
+		[...code.matchAll(new RegExp(`\\b${name}\\b`, "gi"))].map((m) => ({ name, at: m.index })),
 	)
 	expect(calls.filter((c) => !(c.name === "Expand-Archive" && c.at > seam && c.at < seamEnd))).toEqual([])
 	expect(calls.filter((c) => c.name === "Expand-Archive")).toHaveLength(1)
