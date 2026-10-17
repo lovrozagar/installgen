@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process"
 import { describe, expect, test } from "vitest"
 import type { Segment } from "../config/types.ts"
+import { pwshCommand } from "../../tests/support/shells.ts"
 import { psString, shWord } from "./quote.ts"
 
 const lit = (value: string): Segment => ({ kind: "literal", value })
@@ -29,7 +30,7 @@ const HOSTILE = [
 	"",
 ]
 
-const DOCKER = process.env.INSTALLGEN_E2E_DOCKER === "1"
+const PWSH = pwshCommand()
 
 /* the shell's own values for the tokens, so a round-trip proves tokens become variable expansions */
 function shEval(word: string): string {
@@ -47,21 +48,8 @@ function pwshEval(exprs: readonly string[]): string[] {
 				`[Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(${e}))); [Console]::Out.Write(':')`,
 		),
 	].join("\n")
-	const result = spawnSync(
-		"docker",
-		[
-			"run",
-			"--rm",
-			"-i",
-			"mcr.microsoft.com/powershell:latest",
-			"pwsh",
-			"-NoProfile",
-			"-NonInteractive",
-			"-Command",
-			"-",
-		],
-		{ input: script, encoding: "utf8" },
-	)
+	const [bin, ...args] = PWSH as [string, ...string[]]
+	const result = spawnSync(bin, [...args, Buffer.from(script, "utf16le").toString("base64")], { encoding: "utf8" })
 	expect(result.status, result.stderr).toBe(0)
 	return result.stdout
 		.split(":")
@@ -95,7 +83,7 @@ describe("psString", () => {
 		expect(psString([])).toBe("''")
 	})
 
-	test.runIf(DOCKER)("round-trips every hostile literal and tokens in Docker pwsh", () => {
+	test.runIf(PWSH)("round-trips every hostile literal and tokens in pwsh (host or Docker)", () => {
 		const cases = [...HOSTILE.map((v) => [lit(v)]), [lit("'$("), T, lit("`;\n"), V, lit('"')]]
 		expect(pwshEval(cases.map((c) => psString(c)))).toEqual([...HOSTILE, "'$(v1.2.3`;\n1.2.3\""])
 	})

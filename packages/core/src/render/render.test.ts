@@ -67,6 +67,13 @@ describe("render", () => {
 		expect(win.ps1).toBeDefined()
 	})
 
+	test("without Unix platforms the ps1 hint has no sh URL", () => {
+		expect(placeholders(resolve({ platforms: ["windows/amd64"] }), {}).ps1.SH_URL).toBe("''")
+		expect(placeholders(resolve({ platforms: ["darwin/arm64", "windows/amd64"] }), {}).ps1.SH_URL).toBe(
+			"'https://dl.example.com/my-cli/install.sh'",
+		)
+	})
+
 	test("without Windows platforms the sh hint has no ps1 URL", () => {
 		expect(placeholders(resolve({ platforms: ["linux/amd64"] }), {}).sh.PS1_URL).toBe("''")
 		expect(placeholders(resolve({ platforms: ["linux/amd64", "windows/arm64"] }), {}).sh.PS1_URL).toBe(

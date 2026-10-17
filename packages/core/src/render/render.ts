@@ -123,7 +123,7 @@ export function placeholders(
 			INSTALL_DIR_DISPLAY: psLiteral(`~\\${resolved.installDir.replaceAll("/", "\\")}`),
 			MODIFY_PATH: resolved.modifyPath ? "$true" : "$false",
 			MESSAGE: psLiteral(message),
-			SH_URL: psLiteral(resolved.scriptUrls.sh),
+			SH_URL: psLiteral(unix.length > 0 ? resolved.scriptUrls.sh : ""),
 			PS1_URL: psLiteral(resolved.scriptUrls.ps1),
 			PLATFORMS: `@(${windows.map((p) => psLiteral(p.platform)).join(", ")})`,
 			PLATFORM_CASES: windows.map(psCase).join("\n"),

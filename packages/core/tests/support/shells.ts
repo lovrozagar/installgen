@@ -38,6 +38,7 @@ export interface Runner {
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+export const shQuote = (s: string): string => `'${s.replaceAll("'", "'\\''")}'`
 export const DOCKERFILE_DIR = join(HERE, "../fixtures")
 const IMAGE = "installgen-e2e:debian"
 const PWSH_IMAGE = "mcr.microsoft.com/powershell:latest"
@@ -85,11 +86,14 @@ function hostRunner(shell: string): Runner {
 		shell,
 		fetch: kind === "ps1" ? "irm" : "curl",
 		systemPath: process.env.PATH ?? "",
-		tty: kind === "sh" && process.platform !== "win32",
+		tty: process.platform !== "win32",
 		run({ command, env, cwd, tty }) {
 			const full = { ...env, TERM: env.TERM ?? "xterm-256color" }
 			if (kind === "ps1") {
-				return exec(shell, ["-NoProfile", "-NonInteractive", "-Command", command], { env: full, cwd, timeout: 50_000 })
+				const args = ["-NoProfile", "-NonInteractive", "-Command", command]
+				if (!tty) return exec(shell, args, { env: full, cwd, timeout: 50_000 })
+				const [bin, ttyArgv] = ttyArgs([shell, ...args].map(shQuote).join(" "), process.platform)
+				return exec(bin, ttyArgv, { env: full, cwd, timeout: 50_000 })
 			}
 			const [bin, args] = tty ? ttyArgs(command, process.platform) : ["sh", ["-c", command]]
 			return exec(bin, args, { env: full, cwd, timeout: 50_000 })
@@ -158,9 +162,23 @@ export function runners(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.P
 	return out
 }
 
+/**
+ * A host `pwsh` from INSTALLGEN_E2E_SHELLS, else Docker pwsh under INSTALLGEN_E2E_DOCKER=1, else none. Append a
+ * base64 UTF-16LE script: `-Command -` reads stdin line by line, which splits multi-line literals.
+ */
+export function pwshCommand(env: NodeJS.ProcessEnv = process.env): string[] | undefined {
+	const listed = (env.INSTALLGEN_E2E_SHELLS ?? "").split(",").map((s) => s.trim())
+	const host = listed.find((s) => s === "pwsh" || s === "powershell")
+	if (host) return [host, "-NoProfile", "-NonInteractive", "-EncodedCommand"]
+	if (env.INSTALLGEN_E2E_DOCKER === "1") {
+		return ["docker", "run", "--rm", PWSH_IMAGE, "pwsh", "-NoProfile", "-NonInteractive", "-EncodedCommand"]
+	}
+	return undefined
+}
+
 /** `curl … | sh -s -- args` (or wget) for the runner's shell. */
 export function shPipeline(runner: Runner, url: string, args: readonly string[] = []): string {
 	const fetch = runner.fetch === "wget" ? `wget -qO- '${url}'` : `curl -fsSL '${url}'`
-	const rest = args.map((a) => `'${a.replaceAll("'", "'\\''")}'`).join(" ")
+	const rest = args.map(shQuote).join(" ")
 	return `${fetch} | ${runner.shell} -s --${rest ? ` ${rest}` : ""}`
 }
