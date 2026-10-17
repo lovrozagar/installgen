@@ -48,17 +48,17 @@ const HOSTILE: InstallgenConfig = {
 	installDir: "~/My Tools/bin",
 }
 
-describe.runIf(DOCKER)("static analysis of the rendered scripts", () => {
-	function lintDir(): string {
-		const dir = mkdtempSync(join(tmpdir(), "installgen-lint-"))
-		cpSync(join(HERE, "golden"), dir, { recursive: true })
-		const out = render(resolveConfig(HOSTILE), {})
-		mkdirSync(join(dir, "hostile"))
-		writeFileSync(join(dir, "hostile", "install.sh"), out.sh ?? "")
-		writeFileSync(join(dir, "hostile", "install.ps1"), out.ps1 ?? "")
-		return dir
-	}
+function lintDir(): string {
+	const dir = mkdtempSync(join(tmpdir(), "installgen-lint-"))
+	cpSync(join(HERE, "golden"), dir, { recursive: true })
+	const out = render(resolveConfig(HOSTILE), {})
+	mkdirSync(join(dir, "hostile"))
+	writeFileSync(join(dir, "hostile", "install.sh"), out.sh ?? "")
+	writeFileSync(join(dir, "hostile", "install.ps1"), out.ps1 ?? "")
+	return dir
+}
 
+describe.runIf(DOCKER)("static analysis of the rendered scripts", () => {
 	test("shellcheck -s sh finds nothing", () => {
 		const dir = lintDir()
 		try {
