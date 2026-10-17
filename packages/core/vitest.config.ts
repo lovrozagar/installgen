@@ -10,7 +10,6 @@ export default defineConfig({
 			thresholds: { branches: 100, functions: 100, lines: 100, perFile: true, statements: 100 },
 		},
 		include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
-		passWithNoTests: true,
 		/* Docker e2e cases pull images and start containers */
 		testTimeout: 60_000,
 	},
