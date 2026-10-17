@@ -113,7 +113,12 @@ export function placeholders(
 			LATEST_URL: psLiteral(latestUrl),
 			DEFAULT_VERSION: psLiteral(defaultVersion),
 			TAG_PREFIX: psLiteral(resolved.tagPrefix),
-			INSTALL_DIR: `(Join-Path $env:USERPROFILE ${psLiteral(resolved.installDir.replaceAll("/", "\\"))})`,
+			/* $env:USERPROFILE is unset on non-Windows pwsh and in some service contexts, and a literal \ is a filename
+			 * character off Windows: Combine(params string[]) (.NET 4, so 5.1 too) joins with the native separator */
+			INSTALL_DIR: `[IO.Path]::Combine([string[]](@([Environment]::GetFolderPath('UserProfile')) + @(${resolved.installDir
+				.split("/")
+				.map(psLiteral)
+				.join(", ")})))`,
 			INSTALL_DIR_DISPLAY: psLiteral(`~\\${resolved.installDir.replaceAll("/", "\\")}`),
 			MODIFY_PATH: resolved.modifyPath ? "$true" : "$false",
 			MESSAGE: psLiteral(message),

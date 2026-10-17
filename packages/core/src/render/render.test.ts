@@ -78,6 +78,8 @@ describe("render", () => {
 	})
 })
 
+const dir = (installDir: string) => placeholders(resolve({ installDir }), {}).ps1.INSTALL_DIR
+
 describe("placeholder values", () => {
 	test("sh", () => {
 		const values = placeholders(resolve({ message: "Run 'my-cli --help'." }), { defaultVersion: "v1.2.3" })
@@ -118,7 +120,8 @@ describe("placeholder values", () => {
 			LATEST_URL: "'https://dl.example.com/my-cli/latest'",
 			DEFAULT_VERSION: "''",
 			TAG_PREFIX: "'v'",
-			INSTALL_DIR: "(Join-Path $env:USERPROFILE '.my-cli\\bin')",
+			INSTALL_DIR:
+				"[IO.Path]::Combine([string[]](@([Environment]::GetFolderPath('UserProfile')) + @('.my-cli', 'bin')))",
 			INSTALL_DIR_DISPLAY: "'~\\.my-cli\\bin'",
 			MODIFY_PATH: "$false",
 			MESSAGE: "'It''s done'",
@@ -135,6 +138,15 @@ describe("placeholder values", () => {
 				"\t\t}",
 			].join("\n"),
 		)
+	})
+
+	test("the ps1 install dir is one quoted literal per segment, joined natively", () => {
+		expect(dir("~/My Tools/bin")).toBe(
+			"[IO.Path]::Combine([string[]](@([Environment]::GetFolderPath('UserProfile')) + @('My Tools', 'bin')))",
+		)
+		expect(dir("~/.local/bin")).toContain("+ @('.local', 'bin')))")
+		expect(dir("~/tools")).toContain("+ @('tools')))")
+		expect(dir("~/a/b/c")).not.toContain("\\")
 	})
 
 	test("no message, no checksums, a binaryInArchive", () => {
