@@ -22,7 +22,7 @@
 		"directory": "packages/core"
 	},
 	"bin": {
-		"installgen": "./bin/installgen.js"
+		"installgen": "bin/installgen.js"
 	},
 	"files": [
 		"bin",

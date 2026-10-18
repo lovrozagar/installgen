@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -57,5 +57,18 @@ describe("bin/installgen.js", () => {
 		expect(readFileSync(join(dir, "installers/install.ps1"), "utf8")).toContain("my-cli_Windows_")
 		const syntax = spawnSync("sh", ["-n", join(dir, "installers/install.sh")], { encoding: "utf8" })
 		expect(syntax.status, syntax.stderr).toBe(0)
+	})
+
+	test("npm publishes the manifest as written: npm pkg fix changes nothing, so the bin survives", () => {
+		/* npm publish rewrites a manifest it would fix, and a bin it rewrites can be dropped from the registry's copy */
+		const dir = mkdtempSync(join(tmpdir(), "installgen-pkg-"))
+		dirs.push(dir)
+		const manifest = readFileSync(join(dirname(BIN), "../package.json"), "utf8")
+		writeFileSync(join(dir, "package.json"), manifest)
+		mkdirSync(join(dir, "bin"))
+		copyFileSync(BIN, join(dir, "bin/installgen.js"))
+		const r = spawnSync("npm", ["pkg", "fix"], { cwd: dir, encoding: "utf8", shell: process.platform === "win32" })
+		expect(r.status, r.stderr).toBe(0)
+		expect(JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))).toEqual(JSON.parse(manifest))
 	})
 })
