@@ -378,7 +378,7 @@ bun run verify       # every gate; stamps the commit when they all pass
 
 The e2e suites serve real releases from a local server and run the generated scripts as `curl … | sh` and `irm … | iex`. `INSTALLGEN_E2E_SHELLS` lists the host shells (default `sh`; `sh,pwsh` adds a host PowerShell), and `INSTALLGEN_E2E_DOCKER=1` adds the Docker runners plus shellcheck and PSScriptAnalyzer on the rendered scripts. The rendered examples are checked in under `packages/core/tests/golden`; refresh them with `UPDATE_GOLDEN=1 bun run test`.
 
-Release: bump `packages/core/package.json`, commit, tag `vX.Y.Z` matching that version, and push the tag. `.github/workflows/release.yml` publishes `@lovrozagar/installgen` to npm through GitHub Actions OIDC trusted publishing. Never `npm publish` from a laptop.
+Release: bump `packages/core/package.json`, commit, tag `vX.Y.Z` matching that version, and push the tag. `.github/workflows/release.yml` publishes `@lovrozagar/installgen` to npm through GitHub Actions OIDC trusted publishing. npm saves a trusted publisher only for a package that exists, so the first version publishes with a short-lived granular token in the `NPM_TOKEN` repo secret; after it, save the trusted publisher and delete the secret. Never `npm publish` from a laptop.
 
 ## License
 

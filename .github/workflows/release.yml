@@ -82,6 +82,7 @@ jobs:
         working-directory: ${{ env.PACKAGE_DIR }}
         env:
           REF: ${{ inputs.tag || github.ref_name }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           tag="${REF#v}"
@@ -130,16 +131,24 @@ jobs:
             "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${encoded}")
           echo "oidc exchange HTTP $code"
           node -e 'const j=require("/tmp/npm-ex.json"); console.log(JSON.stringify({error:j.error,message:j.message,token_type:j.token_type,expires:j.expires}))'
-          if [ "$code" != "201" ]; then
+          if [ "$code" = "201" ]; then
+            NODE_AUTH_TOKEN="$(node -e 'process.stdout.write(require("/tmp/npm-ex.json").token || "")')"
+            if [ -z "$NODE_AUTH_TOKEN" ]; then
+              echo "exchange succeeded but returned no token"
+              exit 1
+            fi
+          elif [ -n "${NPM_TOKEN:-}" ]; then
+            # bootstrap: npm takes a trusted publisher only for a package that exists, so the first
+            # version goes out on a short-lived granular token; delete the secret once the publisher is saved
+            echo "npm rejected the GitHub OIDC token; publishing with secrets.NPM_TOKEN"
+            NODE_AUTH_TOKEN="$NPM_TOKEN"
+          else
             echo "npm rejected the GitHub OIDC token."
             echo "On https://www.npmjs.com/package/${name} → Settings → Trusted Publisher"
             echo "the saved connection must be exactly:"
             echo "  GitHub Actions / lovrozagar / installgen / release.yml / no environment"
-            exit 1
-          fi
-          NODE_AUTH_TOKEN="$(node -e 'process.stdout.write(require("/tmp/npm-ex.json").token || "")')"
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "exchange succeeded but returned no token"
+            echo "Before the first version exists, set a short-lived granular token instead:"
+            echo "  gh secret set NPM_TOKEN -R lovrozagar/installgen"
             exit 1
           fi
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > "${HOME}/.npmrc"
