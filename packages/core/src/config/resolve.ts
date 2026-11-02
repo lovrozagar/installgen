@@ -9,7 +9,7 @@ import {
 	type Os,
 	type Platform,
 } from "./define-config.ts"
-import type { Format, ResolvedConfig, ResolvedPlatform, Segment } from "./types.ts"
+import type { Format, ResolvedConfig, ResolvedPlatform, ResolvedSignature, Segment } from "./types.ts"
 
 export const ALL_PLATFORMS: readonly Platform[] = [
 	"linux/amd64",
@@ -29,6 +29,8 @@ const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"])
 const SENTINELS = new RegExp(`(${VERSION_SENTINEL}|${TAG_SENTINEL})`)
 const MANGLED = /installgen(version|tag)/
+/* the issuer of the OIDC token a GitHub Actions run signs with */
+const GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com"
 
 const fail = (message: string): never => {
 	throw new InstallgenError(message)
@@ -36,20 +38,20 @@ const fail = (message: string): never => {
 
 type Raw = Record<string, unknown>
 
-function string(config: Raw, key: string): string | undefined {
+function string(config: Raw, key: string, scope = "config"): string | undefined {
 	const value = config[key]
 	if (value === undefined) return undefined
-	return typeof value === "string" ? value : fail(`config.${key} must be a string`)
+	return typeof value === "string" ? value : fail(`${scope}.${key} must be a string`)
 }
 
 function required<T>(value: T | undefined, key: string, kind: string): T {
 	return value ?? fail(`config.${key} must be ${kind}`)
 }
 
-function func(config: Raw, key: string): ((ctx: object) => unknown) | undefined {
+function func(config: Raw, key: string, scope = "config"): ((ctx: object) => unknown) | undefined {
 	const value = config[key]
 	if (value === undefined) return undefined
-	return typeof value === "function" ? (value as (ctx: object) => unknown) : fail(`config.${key} must be a function`)
+	return typeof value === "function" ? (value as (ctx: object) => unknown) : fail(`${scope}.${key} must be a function`)
 }
 
 /** https, or http on loopback; returns whether it is https. */
@@ -96,11 +98,52 @@ function split(field: string, platform: Platform, path: string): Segment[] {
 	return segments
 }
 
-function evaluate(field: string, fn: (ctx: object) => unknown, platform: Platform, ctx: object): string {
+/* A certificate identity is matched, never fetched: https only, loopback included */
+function checkIdentity(field: string, identity: string): void {
+	let parsed: URL | undefined
+	try {
+		parsed = new URL(identity)
+	} catch {
+		// reported below
+	}
+	if (parsed?.protocol !== "https:" || parsed.host === "") {
+		fail(`config.${field} must return an https URL, got ${JSON.stringify(identity)}`)
+	}
+}
+
+function evaluate(
+	field: string,
+	fn: (ctx: object) => unknown,
+	platform: Platform,
+	ctx: object,
+	check: (field: string, out: string) => void = checkRelative,
+): string {
 	const out = fn(ctx)
 	if (typeof out !== "string") return fail(`config.${field} must return a string, got ${typeof out} for ${platform}`)
-	checkRelative(field, out)
+	check(field, out)
 	return out
+}
+
+interface Signature {
+	identity: (ctx: object) => unknown
+	bundlePath: ((ctx: object) => unknown) | undefined
+	issuer: string
+}
+
+function signatureOf(config: Raw, signed: boolean): Signature | undefined {
+	const value = config.signature
+	if (value === undefined) return undefined
+	if (typeof value !== "object" || value === null) return fail("config.signature must be an object")
+	if (!signed) fail("config.signature needs config.checksumsPath: the signature is on the checksums file")
+	const raw = value as Raw
+	const scope = "config.signature"
+	const identity = required(func(raw, "identity", scope), "signature.identity", "a function")
+	const bundlePath = func(raw, "bundlePath", scope)
+	const issuer = string(raw, "issuer", scope) ?? GITHUB_ACTIONS_ISSUER
+	noSentinel("signature.issuer", issuer)
+	if (!checkUrl("signature.issuer", issuer))
+		fail(`config.signature.issuer must be an https URL, got ${JSON.stringify(issuer)}`)
+	return { identity, bundlePath, issuer }
 }
 
 function formatOf(asset: string): Format {
@@ -144,6 +187,7 @@ export function resolveConfig(input: InstallgenConfig): ResolvedConfig {
 
 	const assetPath = required(func(config, "assetPath"), "assetPath", "a function")
 	const checksumsPath = func(config, "checksumsPath")
+	const signature = signatureOf(config, checksumsPath !== undefined)
 	const binaryInArchive = func(config, "binaryInArchive")
 
 	const latestPath = string(config, "latestPath") ?? "latest"
@@ -221,19 +265,36 @@ export function resolveConfig(input: InstallgenConfig): ResolvedConfig {
 		}
 		assets.set(key(asset), platform)
 
+		const checksumsRaw =
+			checksumsPath && evaluate("checksumsPath", checksumsPath, platform, { ...ctx, asset: assetRaw })
+		let resolvedSignature: ResolvedSignature | undefined
+		if (signature && checksumsRaw !== undefined) {
+			const bundleRaw = signature.bundlePath
+				? evaluate("signature.bundlePath", signature.bundlePath, platform, {
+						...ctx,
+						asset: assetRaw,
+						checksums: checksumsRaw,
+					})
+				: `${checksumsRaw}.sigstore.json`
+			resolvedSignature = {
+				bundle: split("signature.bundlePath", platform, bundleRaw),
+				identity: split(
+					"signature.identity",
+					platform,
+					evaluate("signature.identity", signature.identity, platform, ctx, checkIdentity),
+				),
+				issuer: signature.issuer,
+			}
+		}
+
 		platforms.push({
 			platform,
 			os,
 			arch,
 			asset,
 			format: formatOf(assetRaw),
-			checksums:
-				checksumsPath &&
-				split(
-					"checksumsPath",
-					platform,
-					evaluate("checksumsPath", checksumsPath, platform, { ...ctx, asset: assetRaw }),
-				),
+			checksums: checksumsRaw === undefined ? undefined : split("checksumsPath", platform, checksumsRaw),
+			signature: resolvedSignature,
 			binaryInArchive:
 				binaryInArchive &&
 				split("binaryInArchive", platform, evaluate("binaryInArchive", binaryInArchive, platform, ctx)),

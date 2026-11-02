@@ -8,6 +8,12 @@ export type Segment =
 
 export type Format = "tar.gz" | "zip" | "raw"
 
+export interface ResolvedSignature {
+	readonly bundle: readonly Segment[]
+	readonly identity: readonly Segment[]
+	readonly issuer: string
+}
+
 export interface ResolvedPlatform {
 	readonly platform: Platform
 	readonly os: Os
@@ -15,6 +21,7 @@ export interface ResolvedPlatform {
 	readonly asset: readonly Segment[]
 	readonly format: Format
 	readonly checksums: readonly Segment[] | undefined
+	readonly signature: ResolvedSignature | undefined
 	readonly binaryInArchive: readonly Segment[] | undefined
 }
 

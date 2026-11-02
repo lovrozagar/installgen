@@ -2,6 +2,14 @@
 
 All notable changes to [`@lovrozagar/installgen`](https://www.npmjs.com/package/@lovrozagar/installgen) are documented in this file.
 
+## 0.2.0
+
+### Added
+
+- `signature` config: the scripts check the checksums file's keyless sigstore bundle with `cosign verify-blob` before its hashes, against an exact certificate `identity` (a path function, so it can name the release tag) and an `issuer` (default GitHub Actions'). The bundle defaults to the checksums path + `.sigstore.json`; `bundlePath` overrides it. Needs `checksumsPath`.
+- cosign runs when it is on `PATH`; a missing bundle or a rejected signature fails the install, and without cosign the scripts show a `!` row. `<PREFIX>_INSTALL_VERIFY=require` refuses before any download when cosign is missing or the release is unsigned.
+- `installgen check` confirms each platform's bundle, and `check --list` prints its URL.
+
 ## 0.1.0
 
 ### Added

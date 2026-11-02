@@ -12,6 +12,7 @@
 		"**/test-results/**",
 		"**/playwright-report/**",
 		"**/_gen/**",
+		"**/tests/fixtures/sigstore/**",
 		"*.lock",
 		".tmp/**",
 		".agents/**",

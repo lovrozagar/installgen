@@ -5,6 +5,7 @@ import {
 	type InstallgenConfig,
 	type Os,
 	type Platform,
+	type SignatureConfig,
 	type TagToken,
 	type VersionToken,
 } from "./define-config.ts"
@@ -79,5 +80,34 @@ describe("config types", () => {
 			// @ts-expect-error baseUrl is required
 		} satisfies InstallgenConfig
 		void missing
+	})
+
+	test("signature: identity is a function of the path context; bundlePath and issuer are optional", () => {
+		defineConfig({
+			name: "app",
+			baseUrl: "https://dl.example.com",
+			assetPath: ({ version }) => `${version}/app`,
+			checksumsPath: ({ tag }) => `${tag}/checksums.txt`,
+			signature: {
+				identity: (ctx) => {
+					expectTypeOf(ctx.tag).toEqualTypeOf<TagToken>()
+					return `https://github.com/o/r/.github/workflows/release.yml@refs/tags/${ctx.tag}`
+				},
+			},
+		})
+		expectTypeOf<SignatureConfig["bundlePath"]>().toEqualTypeOf<SignatureConfig["bundlePath"] | undefined>()
+		expectTypeOf<SignatureConfig["issuer"]>().toEqualTypeOf<string | undefined>()
+		const signature: SignatureConfig = {
+			identity: () => "https://github.com/o/r/.github/workflows/release.yml@refs/heads/main",
+			bundlePath: (ctx) => {
+				expectTypeOf(ctx.checksums).toEqualTypeOf<string>()
+				expectTypeOf(ctx.asset).toEqualTypeOf<string>()
+				return `${ctx.checksums}.sigstore.json`
+			},
+		}
+		void signature
+		// @ts-expect-error identity is a function, not a string
+		const fixed: SignatureConfig = { identity: "https://github.com/o/r" }
+		void fixed
 	})
 })

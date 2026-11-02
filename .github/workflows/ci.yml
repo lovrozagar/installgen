@@ -59,6 +59,10 @@ jobs:
       - run: bun run fmt:check
       - run: bun run lint
       - run: bun run typecheck
+      # the real-cosign test in tests/cosign.test.ts runs only with cosign on PATH
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
       - run: bun run test
 
   # shellcheck and PSScriptAnalyzer on the checked-in renders of the three examples

@@ -109,7 +109,16 @@ export async function check(options: CheckOptions, ui: Ui): Promise<number> {
 				ui.bad(p.platform, `no checksum for ${file} in ${sumsUrl}`)
 			} else found.push("sha256 listed")
 		}
-		if (found.length === (p.checksums === undefined ? 1 : 2)) ui.ok(p.platform, found.join(", "))
+		if (p.signature !== undefined) {
+			const missingBundle = await exists(`${resolved.baseUrl}/${expand(p.signature.bundle, version, tag)}`)
+			if (missingBundle === undefined) found.push("signature bundle")
+			else {
+				problems++
+				ui.bad(p.platform, missingBundle)
+			}
+		}
+		const expected = 1 + (p.checksums === undefined ? 0 : 1) + (p.signature === undefined ? 0 : 1)
+		if (found.length === expected) ui.ok(p.platform, found.join(", "))
 	}
 	if (problems === 0) ui.info(`all ${resolved.platforms.length} platforms ok for ${version}`)
 	else ui.info(`${problems} problem${problems === 1 ? "" : "s"}`)
@@ -143,5 +152,8 @@ function list(resolved: ResolvedConfig, defaultVersion: string | undefined, ui: 
 	for (const p of resolved.platforms) {
 		ui.info(`${p.platform} ${resolved.baseUrl}/${expand(p.asset, version, tag)}`)
 		if (p.checksums !== undefined) ui.info(`${p.platform} ${resolved.baseUrl}/${expand(p.checksums, version, tag)}`)
+		if (p.signature !== undefined) {
+			ui.info(`${p.platform} ${resolved.baseUrl}/${expand(p.signature.bundle, version, tag)}`)
+		}
 	}
 }

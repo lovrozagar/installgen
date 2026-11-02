@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { withoutCosign } from "./cosign.ts"
 
 /*
  * Who runs the generated scripts. `INSTALLGEN_E2E_SHELLS` lists host shells (default `sh` on Linux and macOS, none on
@@ -29,7 +30,7 @@ export interface Runner {
 	shell: string
 	/** The downloader the pipeline uses. */
 	fetch: "curl" | "wget" | "irm"
-	/** PATH outside the test's shims. */
+	/** PATH outside the test's shims, never holding a real cosign. */
 	systemPath: string
 	/** Whether `tty: true` is supported. */
 	tty: boolean
@@ -117,7 +118,8 @@ function hostRunner(shell: string): Runner {
 		kind,
 		shell,
 		fetch: kind === "ps1" ? "irm" : "curl",
-		systemPath: process.env.PATH ?? "",
+		/* a real cosign on the host would answer the scripts' signature check; tests that want one put it in their shims */
+		systemPath: withoutCosign(process.env.PATH ?? ""),
 		tty: process.platform !== "win32",
 		run({ command, env, cwd, tty }) {
 			const full = { ...windowsBase(), ...env, TERM: env.TERM ?? "xterm-256color" }

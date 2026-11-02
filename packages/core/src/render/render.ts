@@ -51,6 +51,9 @@ function checkAscii(resolved: ResolvedConfig): void {
 		ascii(`config.assetPath for ${p.platform}`, literals(p.asset))
 		ascii(`config.checksumsPath for ${p.platform}`, literals(p.checksums))
 		ascii(`config.binaryInArchive for ${p.platform}`, literals(p.binaryInArchive))
+		ascii(`config.signature.bundlePath for ${p.platform}`, literals(p.signature?.bundle))
+		ascii(`config.signature.identity for ${p.platform}`, literals(p.signature?.identity))
+		ascii(`config.signature.issuer for ${p.platform}`, p.signature?.issuer)
 	}
 }
 
@@ -60,6 +63,9 @@ function shCase(p: ResolvedPlatform): string {
 		`\t\t\tasset_path=${shWord(p.asset)}`,
 		`\t\t\tformat=${shLiteral(p.format)}`,
 		`\t\t\tchecksums_path=${shWord(p.checksums ?? [])}`,
+		`\t\t\tbundle_path=${shWord(p.signature?.bundle ?? [])}`,
+		`\t\t\tidentity=${shWord(p.signature?.identity ?? [])}`,
+		`\t\t\tissuer=${shLiteral(p.signature?.issuer ?? "")}`,
 		`\t\t\tbinary_in_archive=${shWord(p.binaryInArchive ?? [])}`,
 		"\t\t\t;;",
 	].join("\n")
@@ -71,6 +77,9 @@ function psCase(p: ResolvedPlatform): string {
 		`\t\t\t$assetPath = ${psString(p.asset)}`,
 		`\t\t\t$format = ${psLiteral(p.format)}`,
 		`\t\t\t$checksumsPath = ${psString(p.checksums ?? [])}`,
+		`\t\t\t$bundlePath = ${psString(p.signature?.bundle ?? [])}`,
+		`\t\t\t$identity = ${psString(p.signature?.identity ?? [])}`,
+		`\t\t\t$issuer = ${psLiteral(p.signature?.issuer ?? "")}`,
 		`\t\t\t$binaryInArchive = ${psString(p.binaryInArchive ?? [])}`,
 		"\t\t}",
 	].join("\n")

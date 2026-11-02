@@ -12,6 +12,7 @@ import {
 	type ReleaseOptions,
 	type TestServer,
 } from "./support/server.ts"
+import { cosignArgs, fakeCosign } from "./support/cosign.ts"
 import { runners, shPipeline, type Runner, type RunResult } from "./support/shells.ts"
 
 const SH_RUNNERS = runners().filter((r) => r.kind === "sh")
@@ -27,6 +28,11 @@ const config = {
 	checksumsPath: ({ tag }) => `${tag}/checksums.txt`,
 } satisfies Omit<InstallgenConfig, "baseUrl">
 const { checksumsPath: _checksums, ...noChecksums } = config
+const IDENTITY = "https://github.com/acme/my-cli/.github/workflows/release.yml@refs/tags/"
+const signed = {
+	...config,
+	signature: { identity: ({ tag }) => `${IDENTITY}${tag}` },
+} satisfies Omit<InstallgenConfig, "baseUrl">
 
 let server: TestServer
 let cases = 0
@@ -91,6 +97,9 @@ function install(runner: Runner, box: Sandbox, url: string, options: InstallOpti
 	})
 }
 
+const prefixOf = (rel: { baseUrl: string }) => rel.baseUrl.slice(server.url.length)
+const assetRequested = (rel: { baseUrl: string; asset(p: string, v: string): string }) =>
+	server.requested(prefixOf(rel)).includes(rel.asset(HOST, "1.2.3"))
 const target = (box: Sandbox) => join(box.home, ".my-cli/bin/my-cli")
 const output = (r: RunResult) => r.stdout + r.stderr
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, "g")
@@ -306,6 +315,99 @@ describe.each(SH_RUNNERS)("install.sh under $name", (runner) => {
 			expect(r.status, output(r)).toBe(0)
 			expect(r.stdout).toMatch(/! Verified +skipped: no checksums published/)
 			expectInstalled(box, "1.2.3")
+		})
+	})
+
+	describe("signature", () => {
+		test("cosign on PATH checks the bundle against the tag-bound identity, before the hashes", async () => {
+			const box = sandbox()
+			fakeCosign(box.shims, false)
+			const rel = release({ config: signed })
+			const r = await install(runner, box, rel.shUrl)
+			expect(r.status, output(r)).toBe(0)
+			expect(r.stdout).toMatch(/Signed +cosign[\s\S]*Verified +sha256/)
+			expect(cosignArgs(box.shims)).toEqual([
+				"verify-blob",
+				"--bundle",
+				expect.any(String),
+				"--certificate-identity",
+				`${IDENTITY}v1.2.3`,
+				"--certificate-oidc-issuer",
+				"https://token.actions.githubusercontent.com",
+				expect.any(String),
+			])
+			expectInstalled(box, "1.2.3")
+		})
+
+		test("a bundle cosign rejects fails, and nothing is installed", async () => {
+			const box = sandbox()
+			fakeCosign(box.shims, false)
+			const rel = release({ config: signed, bundle: "forged" })
+			const r = await install(runner, box, rel.shUrl)
+			expect(r.status).not.toBe(0)
+			expect(r.stderr).toContain(`checksums.txt: cosign could not verify it as signed by ${IDENTITY}v1.2.3`)
+			expect(existsSync(join(box.home, ".my-cli"))).toBe(false)
+		})
+
+		test("a missing bundle fails, naming it", async () => {
+			const box = sandbox()
+			fakeCosign(box.shims, false)
+			const rel = release({ config: signed })
+			server.remove(`${prefixOf(rel)}/v1.2.3/checksums.txt.sigstore.json`)
+			const r = await install(runner, box, rel.shUrl)
+			expect(r.status).not.toBe(0)
+			expect(r.stderr).toMatch(/download failed: .*\/v1\.2\.3\/checksums\.txt\.sigstore\.json/)
+		})
+
+		test("no cosign: a warn row, and the install goes on", async () => {
+			const box = sandbox()
+			const rel = release({ config: signed })
+			const r = await install(runner, box, rel.shUrl)
+			expect(r.status, output(r)).toBe(0)
+			expect(r.stdout).toMatch(/! Signed +skipped: cosign not installed/)
+			expect(r.stdout).toMatch(/Verified +sha256/)
+			expectInstalled(box, "1.2.3")
+		})
+
+		test("INSTALL_VERIFY=require with cosign installs", async () => {
+			const box = sandbox()
+			fakeCosign(box.shims, false)
+			const rel = release({ config: signed })
+			const r = await install(runner, box, rel.shUrl, { env: { MY_CLI_INSTALL_VERIFY: "require" } })
+			expect(r.status, output(r)).toBe(0)
+			expect(r.stdout).toMatch(/Signed +cosign/)
+		})
+
+		test.each([
+			[
+				"no cosign",
+				signed,
+				false,
+				"MY_CLI_INSTALL_VERIFY=require: cosign is not installed to verify the checksums' signature",
+			],
+			[
+				"an unsigned release",
+				config,
+				true,
+				"MY_CLI_INSTALL_VERIFY=require: no signature is published for this release",
+			],
+		])("INSTALL_VERIFY=require refuses %s before any download", async (_case, cfg, cosign, message) => {
+			const box = sandbox()
+			if (cosign) fakeCosign(box.shims, false)
+			const rel = release({ config: cfg })
+			const r = await install(runner, box, rel.shUrl, { env: { MY_CLI_INSTALL_VERIFY: "require" } })
+			expect(r.status).not.toBe(0)
+			expect(r.stderr).toContain(message)
+			expect(assetRequested(rel)).toBe(false)
+		})
+
+		test("an unknown INSTALL_VERIFY value fails", async () => {
+			const box = sandbox()
+			const rel = release({ config: signed })
+			const r = await install(runner, box, rel.shUrl, { env: { MY_CLI_INSTALL_VERIFY: "yes" } })
+			expect(r.status).not.toBe(0)
+			expect(r.stderr).toContain("MY_CLI_INSTALL_VERIFY yes: want require, or unset")
+			expect(assetRequested(rel)).toBe(false)
 		})
 	})
 

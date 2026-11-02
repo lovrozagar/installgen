@@ -430,3 +430,94 @@ describe("validation errors", () => {
 		expect(() => resolveConfig(loose(overrides))).toThrow(message)
 	})
 })
+
+describe("signature", () => {
+	const ISSUER = "https://token.actions.githubusercontent.com"
+	const signed = {
+		...base,
+		checksumsPath: ({ tag }) => `${tag}/checksums.txt`,
+		signature: {
+			identity: ({ tag }) => `https://github.com/acme/my-cli/.github/workflows/release.yml@refs/tags/${tag}`,
+		},
+	} satisfies InstallgenConfig
+
+	test("the bundle defaults to the checksums path + .sigstore.json, the issuer to GitHub Actions'", () => {
+		const r = resolveConfig(signed)
+		for (const p of r.platforms) {
+			expect(p.signature).toEqual({
+				bundle: [T, lit("/checksums.txt.sigstore.json")],
+				identity: [lit("https://github.com/acme/my-cli/.github/workflows/release.yml@refs/tags/"), T],
+				issuer: ISSUER,
+			})
+		}
+	})
+
+	test("bundlePath gets the checksums path and the asset; issuer overrides", () => {
+		const r = resolveConfig({
+			...signed,
+			platforms: ["linux/arm64"],
+			signature: {
+				...signed.signature,
+				issuer: "https://issuer.example.com",
+				bundlePath: ({ checksums, asset, version }) =>
+					`${version}/sig/${checksums.split("/").at(-1)}-${asset.split("/").at(-1)}.json`,
+			},
+		})
+		expect(r.platforms[0]?.signature).toMatchObject({
+			bundle: [V, lit("/sig/checksums.txt-my-cli-linux-arm64.json")],
+			issuer: "https://issuer.example.com",
+		})
+	})
+
+	test("unset signature resolves to undefined", () => {
+		for (const p of resolveConfig(base).platforms) expect(p.signature).toBeUndefined()
+	})
+
+	test.each([
+		["not an object", { signature: "x" }, /signature must be an object/],
+		["null", { signature: null }, /signature must be an object/],
+		["no checksumsPath", { checksumsPath: undefined }, /signature needs config\.checksumsPath/],
+		["identity missing", { signature: {} }, /signature\.identity must be a function/],
+		["identity a string", { signature: { identity: "https://x" } }, /signature\.identity must be a function/],
+		["identity result", { signature: { identity: () => 1 } }, /signature\.identity must return a string.*linux\/amd64/],
+		[
+			"identity not https",
+			{ signature: { identity: () => "http://ci.example.com/x" } },
+			/signature\.identity.*https URL/,
+		],
+		["identity no URL", { signature: { identity: () => "acme release" } }, /signature\.identity.*https URL/],
+		[
+			"identity mangled",
+			{ signature: { identity: ({ tag }: PathArgs) => `https://ci.example.com/${String(tag).toLowerCase()}` } },
+			/signature\.identity.*linux\/amd64.*mangled/,
+		],
+		[
+			"bundlePath a string",
+			{ signature: { ...signed.signature, bundlePath: "x" } },
+			/signature\.bundlePath must be a function/,
+		],
+		[
+			"bundlePath absolute",
+			{ signature: { ...signed.signature, bundlePath: () => "/sig.json" } },
+			/signature\.bundlePath must be a path relative to baseUrl/,
+		],
+		["issuer a number", { signature: { ...signed.signature, issuer: 1 } }, /signature\.issuer must be a string/],
+		[
+			"issuer not https",
+			{ signature: { ...signed.signature, issuer: "http://issuer.example.com" } },
+			/signature\.issuer must be an https URL/,
+		],
+		[
+			"issuer on loopback http",
+			{ signature: { ...signed.signature, issuer: "http://127.0.0.1:8080" } },
+			/signature\.issuer must be an https URL/,
+		],
+		[
+			"issuer with a token",
+			{ signature: { ...signed.signature, issuer: `https://x.example.com/${TAG_SENTINEL}` } },
+			/signature\.issuer cannot hold a version or tag token/,
+		],
+	])("%s throws", (_case, overrides, message) => {
+		expect(() => resolveConfig({ ...signed, ...loose(overrides) } as InstallgenConfig)).toThrow(message)
+	})
+})

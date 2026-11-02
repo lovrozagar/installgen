@@ -6,7 +6,8 @@
 #   curl -fsSL <url> | sh                  the latest version
 #   curl -fsSL <url> | sh -s -- 1.2.3      a specific version
 #
-# Environment: MY_CLI_VERSION, MY_CLI_INSTALL_DIR, MY_CLI_NO_MODIFY_PATH=1, NO_COLOR.
+# Environment: MY_CLI_VERSION, MY_CLI_INSTALL_DIR, MY_CLI_NO_MODIFY_PATH=1,
+# MY_CLI_INSTALL_VERIFY=require, NO_COLOR.
 # POSIX sh: runs under dash, bash 3.2+, zsh and busybox ash. Everything runs in main, so a truncated download
 # runs nothing.
 set -u
@@ -114,24 +115,36 @@ resolve_platform() {
 			asset_path="$tag"'/my-cli_Linux_x86_64.tar.gz'
 			format='tar.gz'
 			checksums_path="$tag"'/my-cli_'"$version"'_checksums.txt'
+			bundle_path=''
+			identity=''
+			issuer=''
 			binary_in_archive=''
 			;;
 		'linux/arm64')
 			asset_path="$tag"'/my-cli_Linux_arm64.tar.gz'
 			format='tar.gz'
 			checksums_path="$tag"'/my-cli_'"$version"'_checksums.txt'
+			bundle_path=''
+			identity=''
+			issuer=''
 			binary_in_archive=''
 			;;
 		'darwin/amd64')
 			asset_path="$tag"'/my-cli_Darwin_x86_64.tar.gz'
 			format='tar.gz'
 			checksums_path="$tag"'/my-cli_'"$version"'_checksums.txt'
+			bundle_path=''
+			identity=''
+			issuer=''
 			binary_in_archive=''
 			;;
 		'darwin/arm64')
 			asset_path="$tag"'/my-cli_Darwin_arm64.tar.gz'
 			format='tar.gz'
 			checksums_path="$tag"'/my-cli_'"$version"'_checksums.txt'
+			bundle_path=''
+			identity=''
+			issuer=''
 			binary_in_archive=''
 			;;
 	*) return 1 ;;
@@ -248,6 +261,19 @@ main() {
 			fail "sha256sum, shasum or openssl is required to verify the download"
 		fi
 	fi
+	# Signature: cosign checks the checksums file when it is on PATH; <PREFIX>_INSTALL_VERIFY=require refuses without it
+	case "${MY_CLI_INSTALL_VERIFY:-}" in
+	'' | require) ;;
+	*) fail "MY_CLI_INSTALL_VERIFY ${MY_CLI_INSTALL_VERIFY}: want require, or unset" ;;
+	esac
+	signer=''
+	if [ -n "$bundle_path" ] && command -v cosign >/dev/null 2>&1; then
+		signer=cosign
+	fi
+	if [ "${MY_CLI_INSTALL_VERIFY:-}" = require ]; then
+		[ -n "$bundle_path" ] || fail "MY_CLI_INSTALL_VERIFY=require: no signature is published for this release"
+		[ -n "$signer" ] || fail "MY_CLI_INSTALL_VERIFY=require: cosign is not installed to verify the checksums' signature"
+	fi
 
 	tmp=$(mktemp -d 2>/dev/null || mktemp -d -t "$name") || fail "could not create a temporary directory"
 	trap 'rm -rf "$tmp"' EXIT
@@ -284,6 +310,16 @@ main() {
 	if [ -n "$checksums_path" ]; then
 		checksums_url="$base_url/$checksums_path"
 		fetch "$checksums_url" "$tmp/checksums" || fail "download failed: $checksums_url"
+		if [ -n "$signer" ]; then
+			bundle_url="$base_url/$bundle_path"
+			fetch "$bundle_url" "$tmp/bundle" || fail "download failed: $bundle_url"
+			cosign verify-blob --bundle "$tmp/bundle" --certificate-identity "$identity" \
+				--certificate-oidc-issuer "$issuer" "$tmp/checksums" >/dev/null 2>&1 ||
+				fail "${checksums_path##*/}: cosign could not verify it as signed by $identity"
+			ok Signed cosign
+		elif [ -n "$bundle_path" ]; then
+			warn_row Signed "skipped: cosign not installed"
+		fi
 		# `hash  file`, `hash *file`, BSD `SHA256 (file) = hash`, or a file holding one bare hash
 		expected=$(awk -v f="$asset_file" '
 			$1 == "SHA256" && $2 == "(" f ")" && $3 == "=" { print $4; exit }

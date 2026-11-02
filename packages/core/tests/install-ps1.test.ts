@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { delimiter, join } from "node:path"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import type { InstallgenConfig } from "../src/config/define-config.ts"
 import { fakeBinary, publish, startServer, type ReleaseOptions, type TestServer } from "./support/server.ts"
 import { spawnSync } from "node:child_process"
 import { resolveConfig } from "../src/config/resolve.ts"
 import { render } from "../src/render/render.ts"
+import { cosignArgs, fakeCosign } from "./support/cosign.ts"
 import { pwshCommand, runners, type Runner, type RunResult } from "./support/shells.ts"
 
 const PS_RUNNERS = runners().filter((r) => r.kind === "ps1")
@@ -19,6 +20,11 @@ const config = {
 	assetPath: ({ tag, version, os, arch }) =>
 		`${tag}/my-cli_${version}_${os}_${arch}${os === "windows" ? ".zip" : ".tar.gz"}`,
 	checksumsPath: ({ tag }) => `${tag}/checksums.txt`,
+} satisfies Omit<InstallgenConfig, "baseUrl">
+const IDENTITY = "https://github.com/acme/my-cli/.github/workflows/release.yml@refs/tags/"
+const signed = {
+	...config,
+	signature: { identity: ({ tag }) => `${IDENTITY}${tag}` },
 } satisfies Omit<InstallgenConfig, "baseUrl">
 
 let server: TestServer
@@ -113,6 +119,16 @@ async function keepingUserPath(runner: Runner, fn: () => Promise<void>): Promise
 	}
 }
 
+/** A fake cosign in its own dir ahead of PATH: a .cmd on Windows, a sh script under Docker pwsh. */
+function withCosign(runner: Runner, box: Sandbox): { shims: string; env: Record<string, string> } {
+	const shims = join(box.root, "shims")
+	mkdirSync(shims, { recursive: true })
+	fakeCosign(shims, WIN)
+	return { shims, env: { PATH: `${shims}${delimiter}${runner.systemPath}` } }
+}
+const prefixOf = (rel: { baseUrl: string }) => rel.baseUrl.slice(server.url.length)
+const assetRequested = (rel: { baseUrl: string; asset(p: string, v: string): string }) =>
+	server.requested(prefixOf(rel)).includes(rel.asset(`windows/${ARCH}`, "1.2.3"))
 const target = (box: Sandbox) => join(box.home, ".my-cli", "bin", "my-cli.exe")
 const output = (r: RunResult) => r.stdout + r.stderr
 
@@ -259,6 +275,98 @@ describe.each(PS_RUNNERS)("install.ps1 under $name", (runner) => {
 			expect(r.status).not.toBe(0)
 			expect(output(r)).toContain("invalid version")
 			expect(existsSync(target(box))).toBe(false)
+		})
+	})
+
+	describe("signature", () => {
+		test("cosign on PATH checks the bundle against the tag-bound identity, before the hashes", async () => {
+			const box = sandbox()
+			const cosign = withCosign(runner, box)
+			const rel = release({ config: signed })
+			const r = await install(runner, box, rel.ps1Url, { env: cosign.env })
+			expect(r.status, output(r)).toBe(0)
+			expect(r.stdout).toMatch(/Signed +cosign[\s\S]*Verified +sha256/)
+			expect(cosignArgs(cosign.shims)).toEqual([
+				"verify-blob",
+				"--bundle",
+				expect.any(String),
+				"--certificate-identity",
+				`${IDENTITY}v1.2.3`,
+				"--certificate-oidc-issuer",
+				"https://token.actions.githubusercontent.com",
+				expect.any(String),
+			])
+			expectInstalled(box, "1.2.3")
+		})
+
+		test("a bundle cosign rejects fails, and nothing is installed", async () => {
+			const box = sandbox()
+			const cosign = withCosign(runner, box)
+			const rel = release({ config: signed, bundle: "forged" })
+			const r = await install(runner, box, rel.ps1Url, { env: cosign.env })
+			expect(r.status).not.toBe(0)
+			expect(output(r)).toContain(`checksums.txt: cosign could not verify it as signed by ${IDENTITY}v1.2.3`)
+			expect(existsSync(target(box))).toBe(false)
+		})
+
+		test("a missing bundle fails, naming it", async () => {
+			const box = sandbox()
+			const cosign = withCosign(runner, box)
+			const rel = release({ config: signed })
+			server.remove(`${prefixOf(rel)}/v1.2.3/checksums.txt.sigstore.json`)
+			const r = await install(runner, box, rel.ps1Url, { env: cosign.env })
+			expect(r.status).not.toBe(0)
+			expect(output(r)).toMatch(/download failed: .*\/v1\.2\.3\/checksums\.txt\.sigstore\.json/)
+		})
+
+		test("no cosign: a warn row, and the install goes on", async () => {
+			const box = sandbox()
+			const rel = release({ config: signed })
+			const r = await install(runner, box, rel.ps1Url)
+			expect(r.status, output(r)).toBe(0)
+			expect(r.stdout).toMatch(/! Signed +skipped: cosign not installed/)
+			expectInstalled(box, "1.2.3")
+		})
+
+		test("INSTALL_VERIFY=require with cosign installs", async () => {
+			const box = sandbox()
+			const cosign = withCosign(runner, box)
+			const rel = release({ config: signed })
+			const r = await install(runner, box, rel.ps1Url, { env: { ...cosign.env, MY_CLI_INSTALL_VERIFY: "require" } })
+			expect(r.status, output(r)).toBe(0)
+			expect(r.stdout).toMatch(/Signed +cosign/)
+		})
+
+		test.each([
+			[
+				"no cosign",
+				signed,
+				false,
+				"MY_CLI_INSTALL_VERIFY=require: cosign is not installed to verify the checksums' signature",
+			],
+			[
+				"an unsigned release",
+				config,
+				true,
+				"MY_CLI_INSTALL_VERIFY=require: no signature is published for this release",
+			],
+		])("INSTALL_VERIFY=require refuses %s before any download", async (_case, cfg, cosign, message) => {
+			const box = sandbox()
+			const env = cosign ? withCosign(runner, box).env : {}
+			const rel = release({ config: cfg })
+			const r = await install(runner, box, rel.ps1Url, { env: { ...env, MY_CLI_INSTALL_VERIFY: "require" } })
+			expect(r.status).not.toBe(0)
+			expect(output(r)).toContain(message)
+			expect(assetRequested(rel)).toBe(false)
+		})
+
+		test("an unknown INSTALL_VERIFY value fails", async () => {
+			const box = sandbox()
+			const rel = release({ config: signed })
+			const r = await install(runner, box, rel.ps1Url, { env: { MY_CLI_INSTALL_VERIFY: "yes" } })
+			expect(r.status).not.toBe(0)
+			expect(output(r)).toContain("MY_CLI_INSTALL_VERIFY yes: want require, or unset")
+			expect(assetRequested(rel)).toBe(false)
 		})
 	})
 

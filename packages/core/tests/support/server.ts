@@ -206,6 +206,8 @@ export interface ReleaseOptions {
 	wrap?: boolean
 	/** More archive entries, e.g. a second file with the binary's name. */
 	extra?: readonly Entry[]
+	/** The body of each sigstore bundle a `signature` config names. The fake cosign accepts `good`. Default `good`. */
+	bundle?: string
 }
 
 export interface Release {
@@ -281,6 +283,12 @@ export function publish(server: TestServer, options: ReleaseOptions): Release {
 				if (!lines.includes(checksumLine(style, sha256(data), file)))
 					lines.push(checksumLine(style, sha256(data), file))
 				sums.set(path, lines)
+			}
+			if (p.signature) {
+				server.set(
+					`${options.prefix}/${expand(p.signature.bundle, version, resolved.tagPrefix)}`,
+					options.bundle ?? "good",
+				)
 			}
 		}
 		for (const [path, lines] of sums) server.set(`${options.prefix}/${path}`, `${lines.join("\n")}\n`)

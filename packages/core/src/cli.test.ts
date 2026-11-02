@@ -426,6 +426,35 @@ describe("check", () => {
 		expect(r.out).toContain(`linux/amd64 ${rel.baseUrl}/{tag}/checksums.txt`)
 	})
 
+	test("a signed release: the bundle is probed, and a missing one is listed", async () => {
+		const prefix = `/check${++n}`
+		const signature =
+			"signature: { identity: ({ tag }) => `https://github.com/acme/my-cli/.github/workflows/release.yml@refs/tags/${tag}` },"
+		const rel = publish(server, {
+			prefix,
+			config: {
+				...config,
+				signature: {
+					identity: ({ tag }) => `https://github.com/acme/my-cli/.github/workflows/release.yml@refs/tags/${tag}`,
+				},
+			},
+			versions: ["1.2.3"],
+		})
+		const dir = sandbox({ "installgen.config.mjs": configSource(rel.baseUrl, signature) })
+		const ok = await cli(["check"], dir)
+		expect(ok.code, ok.out + ok.err).toBe(0)
+		expect(ok.out).toMatch(/\+ linux\/amd64 +.*sha256 listed, signature bundle/)
+		expect(requests(prefix).filter((q) => q.path.endsWith("/checksums.txt.sigstore.json"))).not.toHaveLength(0)
+
+		server.remove(`${prefix}/v1.2.3/checksums.txt.sigstore.json`)
+		const missing = await cli(["check"], dir)
+		expect(missing.code).not.toBe(0)
+		expect(missing.out).toMatch(/x linux\/amd64 +missing .*v1\.2\.3\/checksums\.txt\.sigstore\.json \(404\)/)
+
+		const listed = await cli(["check", "--list"], dir)
+		expect(listed.out).toContain(`linux/amd64 ${rel.baseUrl}/{tag}/checksums.txt.sigstore.json`)
+	})
+
 	test("--list with --default-version fills the version in", async () => {
 		const { dir, rel } = released()
 		const r = await cli(["check", "--list", "--default-version", "1.2.3"], dir)

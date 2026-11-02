@@ -6,7 +6,8 @@
 #   curl -fsSL <url> | sh                  the latest version
 #   curl -fsSL <url> | sh -s -- 1.2.3      a specific version
 #
-# Environment: @@ENV_PREFIX@@_VERSION, @@ENV_PREFIX@@_INSTALL_DIR, @@ENV_PREFIX@@_NO_MODIFY_PATH=1, NO_COLOR.
+# Environment: @@ENV_PREFIX@@_VERSION, @@ENV_PREFIX@@_INSTALL_DIR, @@ENV_PREFIX@@_NO_MODIFY_PATH=1,
+# @@ENV_PREFIX@@_INSTALL_VERIFY=require, NO_COLOR.
 # POSIX sh: runs under dash, bash 3.2+, zsh and busybox ash. Everything runs in main, so a truncated download
 # runs nothing.
 set -u
@@ -225,6 +226,19 @@ main() {
 			fail "sha256sum, shasum or openssl is required to verify the download"
 		fi
 	fi
+	# Signature: cosign checks the checksums file when it is on PATH; <PREFIX>_INSTALL_VERIFY=require refuses without it
+	case "${@@ENV_PREFIX@@_INSTALL_VERIFY:-}" in
+	'' | require) ;;
+	*) fail "@@ENV_PREFIX@@_INSTALL_VERIFY ${@@ENV_PREFIX@@_INSTALL_VERIFY}: want require, or unset" ;;
+	esac
+	signer=''
+	if [ -n "$bundle_path" ] && command -v cosign >/dev/null 2>&1; then
+		signer=cosign
+	fi
+	if [ "${@@ENV_PREFIX@@_INSTALL_VERIFY:-}" = require ]; then
+		[ -n "$bundle_path" ] || fail "@@ENV_PREFIX@@_INSTALL_VERIFY=require: no signature is published for this release"
+		[ -n "$signer" ] || fail "@@ENV_PREFIX@@_INSTALL_VERIFY=require: cosign is not installed to verify the checksums' signature"
+	fi
 
 	tmp=$(mktemp -d 2>/dev/null || mktemp -d -t "$name") || fail "could not create a temporary directory"
 	trap 'rm -rf "$tmp"' EXIT
@@ -261,6 +275,16 @@ main() {
 	if [ -n "$checksums_path" ]; then
 		checksums_url="$base_url/$checksums_path"
 		fetch "$checksums_url" "$tmp/checksums" || fail "download failed: $checksums_url"
+		if [ -n "$signer" ]; then
+			bundle_url="$base_url/$bundle_path"
+			fetch "$bundle_url" "$tmp/bundle" || fail "download failed: $bundle_url"
+			cosign verify-blob --bundle "$tmp/bundle" --certificate-identity "$identity" \
+				--certificate-oidc-issuer "$issuer" "$tmp/checksums" >/dev/null 2>&1 ||
+				fail "${checksums_path##*/}: cosign could not verify it as signed by $identity"
+			ok Signed cosign
+		elif [ -n "$bundle_path" ]; then
+			warn_row Signed "skipped: cosign not installed"
+		fi
 		# `hash  file`, `hash *file`, BSD `SHA256 (file) = hash`, or a file holding one bare hash
 		expected=$(awk -v f="$asset_file" '
 			$1 == "SHA256" && $2 == "(" f ")" && $3 == "=" { print $4; exit }

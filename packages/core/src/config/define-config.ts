@@ -33,6 +33,24 @@ export interface ChecksumsContext extends PathContext {
 	readonly asset: string
 }
 
+export interface BundleContext extends ChecksumsContext {
+	/** The checksums path `checksumsPath` returned for this platform. */
+	readonly checksums: string
+}
+
+/** A keyless sigstore signature on the checksums file, checked by `cosign verify-blob` when cosign is on PATH. */
+export interface SignatureConfig {
+	/**
+	 * The certificate identity the bundle must carry, matched exactly: an https URL. Interpolate `tag` to bind it to the
+	 * release, e.g. `https://github.com/o/r/.github/workflows/release.yml@refs/tags/${tag}`.
+	 */
+	identity: (ctx: PathContext) => string
+	/** The OIDC issuer the certificate must carry. Default `"https://token.actions.githubusercontent.com"`. */
+	issuer?: string
+	/** The sigstore bundle of the checksums file, per platform. Default: the checksums path + `.sigstore.json`. */
+	bundlePath?: (ctx: BundleContext) => string
+}
+
 export interface InstallgenConfig {
 	/** The binary name, `^[A-Za-z0-9][A-Za-z0-9._-]*$`. */
 	name: string
@@ -44,6 +62,8 @@ export interface InstallgenConfig {
 	platforms?: readonly Platform[]
 	/** A shared `checksums.txt` or a per-asset `<asset>.sha256`, per platform. Unset: no verification. */
 	checksumsPath?: (ctx: ChecksumsContext) => string
+	/** Verify the checksums file's signature before its hashes. Needs `checksumsPath`. Unset: no signature check. */
+	signature?: SignatureConfig
 	/** The file holding the latest version. Default `"latest"`. */
 	latestPath?: string
 	/** The binary's path inside an archive. Default: search the extracted tree. */

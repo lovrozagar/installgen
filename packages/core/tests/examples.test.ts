@@ -39,13 +39,19 @@ describe.each(["raw", "goreleaser", "github"])("examples/%s.config.ts", (example
 	})
 })
 
-/* A config whose literals hold everything a shell treats specially, rendered beside the goldens for the linters */
+/* A config whose literals hold everything a shell treats specially, signed, rendered beside the goldens for the linters */
 const HOSTILE: InstallgenConfig = {
 	name: "my-cli",
 	baseUrl: "https://dl.example.com/my-cli",
 	assetPath: ({ version, os, arch }) => `${version}/my-cli-${os}-${arch}${os === "windows" ? ".exe" : ""}`,
 	message: "Use $HOME, `my-cli --help`, ~/x, $(id), 'single' and \"double\" quotes; 100% done",
 	installDir: "~/My Tools/bin",
+	checksumsPath: ({ tag }) => `${tag}/sums $(id).txt`,
+	/* the signed paths too: the presets stay unsigned, since a preset user may publish no bundle */
+	signature: {
+		identity: ({ tag }) => `https://ci.example.com/$HOME/'q'/\`id\`/release.yml@refs/tags/${tag}`,
+		bundlePath: ({ checksums }) => `${checksums}.sig 'x'.json`,
+	},
 }
 
 function lintDir(): string {

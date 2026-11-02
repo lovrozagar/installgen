@@ -131,6 +131,9 @@ describe("placeholder values", () => {
 				`\t\t\tasset_path="$tag"'/my-cli_'"$version"'_linux_amd64.tar.gz'`,
 				"\t\t\tformat='tar.gz'",
 				`\t\t\tchecksums_path="$tag"'/checksums.txt'`,
+				"\t\t\tbundle_path=''",
+				"\t\t\tidentity=''",
+				"\t\t\tissuer=''",
 				"\t\t\tbinary_in_archive=''",
 				"\t\t\t;;",
 			].join("\n"),
@@ -160,6 +163,9 @@ describe("placeholder values", () => {
 				"\t\t\t$assetPath = ($tag + '/my-cli_' + $ver + '_windows_amd64.zip')",
 				"\t\t\t$format = 'zip'",
 				"\t\t\t$checksumsPath = ($tag + '/checksums.txt')",
+				"\t\t\t$bundlePath = ''",
+				"\t\t\t$identity = ''",
+				"\t\t\t$issuer = ''",
 				"\t\t\t$binaryInArchive = ''",
 				"\t\t}",
 			].join("\n"),
@@ -185,9 +191,38 @@ describe("placeholder values", () => {
 		)
 		expect(values.sh.MESSAGE).toBe("''")
 		expect(values.ps1.MESSAGE).toBe("''")
-		expect(values.sh.PLATFORM_CASES).toContain("\t\t\tchecksums_path=''\n\t\t\tbinary_in_archive='bin/linux/my-cli'")
+		expect(values.sh.PLATFORM_CASES).toContain(
+			"\t\t\tchecksums_path=''\n\t\t\tbundle_path=''\n\t\t\tidentity=''\n\t\t\tissuer=''\n\t\t\tbinary_in_archive='bin/linux/my-cli'",
+		)
 		expect(values.ps1.PLATFORM_CASES).toContain(
-			"\t\t\t$checksumsPath = ''\n\t\t\t$binaryInArchive = 'bin/windows/my-cli'",
+			"\t\t\t$checksumsPath = ''\n\t\t\t$bundlePath = ''\n\t\t\t$identity = ''\n\t\t\t$issuer = ''\n\t\t\t$binaryInArchive = 'bin/windows/my-cli'",
+		)
+	})
+
+	test("a signature: the bundle, the tag-bound identity and the issuer, per platform", () => {
+		const values = placeholders(
+			resolve({
+				signature: {
+					identity: ({ tag }) => `https://github.com/acme/my-cli/.github/workflows/release.yml@refs/tags/${tag}`,
+				},
+			}),
+			{},
+		)
+		expect(values.sh.PLATFORM_CASES).toContain(
+			[
+				`\t\t\tchecksums_path="$tag"'/checksums.txt'`,
+				`\t\t\tbundle_path="$tag"'/checksums.txt.sigstore.json'`,
+				`\t\t\tidentity='https://github.com/acme/my-cli/.github/workflows/release.yml@refs/tags/'"$tag"`,
+				"\t\t\tissuer='https://token.actions.githubusercontent.com'",
+			].join("\n"),
+		)
+		expect(values.ps1.PLATFORM_CASES).toContain(
+			[
+				"\t\t\t$checksumsPath = ($tag + '/checksums.txt')",
+				"\t\t\t$bundlePath = ($tag + '/checksums.txt.sigstore.json')",
+				"\t\t\t$identity = ('https://github.com/acme/my-cli/.github/workflows/release.yml@refs/tags/' + $tag)",
+				"\t\t\t$issuer = 'https://token.actions.githubusercontent.com'",
+			].join("\n"),
 		)
 	})
 })
@@ -202,6 +237,15 @@ describe("ASCII and version checks", () => {
 		["assetPath", { assetPath: ({ version, os, arch }: PathContext) => `${version}/app-ü-${os}-${arch}.tar.gz` }],
 		["checksumsPath", { checksumsPath: ({ version }: PathContext) => `${version}/sümme.txt` }],
 		["binaryInArchive", { binaryInArchive: () => "bin/äpp" }],
+		["signature.identity", { signature: { identity: (): string => "https://ci.example.com/réléase" } }],
+		[
+			"signature.bundlePath",
+			{ signature: { identity: (): string => "https://ci.example.com/r", bundlePath: (): string => "v1/sïg.json" } },
+		],
+		[
+			"signature.issuer",
+			{ signature: { identity: (): string => "https://ci.example.com/r", issuer: "https://ïssuer.example.com" } },
+		],
 	])("a non-ASCII %s is rejected", (field, overrides) => {
 		expect(() => render(resolve(overrides as Partial<InstallgenConfig>), {})).toThrow(
 			new RegExp(`${field.replace(".", "\\.")} .*non-ASCII`),

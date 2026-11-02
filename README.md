@@ -31,6 +31,7 @@ That is a real run of a generated `install.sh` on a terminal, with the test serv
 - [Config](#config)
   - [Props](#props)
   - [Path functions, `version` and `tag`](#path-functions-version-and-tag)
+  - [Signatures](#signatures)
   - [Loading the config](#loading-the-config)
 - [CLI](#cli)
   - [`installgen init`](#installgen-init)
@@ -123,22 +124,23 @@ powershell -c "irm https://dl.example.com/my-cli/install.ps1 | iex"
 
 ### Props
 
-| Prop              | Type                                | Default                                     | Meaning                                                                                                |
-| ----------------- | ----------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `name`            | `string`                            | required                                    | The binary name, `^[A-Za-z0-9][A-Za-z0-9._-]*$`; Windows installs `<name>.exe`.                        |
-| `baseUrl`         | `string`                            | required                                    | Where the files live. https only; http is allowed on 127.0.0.1, localhost and [::1] for tests.         |
-| `assetPath`       | `(ctx: PathContext) => string`      | required                                    | The asset's path under `baseUrl`, per platform. Must use `version` or `tag`.                           |
-| `platforms`       | `readonly Platform[]`               | all six                                     | Which of `linux`, `darwin`, `windows` × `amd64`, `arm64` you ship.                                     |
-| `checksumsPath`   | `(ctx: ChecksumsContext) => string` | none: no verification, and a warning        | A shared `checksums.txt` or a per-asset `<asset>.sha256`, per platform; `ctx.asset` is the asset path. |
-| `latestPath`      | `string`                            | `"latest"`                                  | The file under `baseUrl` that holds the latest version (`1.2.3` or `v1.2.3`).                          |
-| `binaryInArchive` | `(ctx: PathContext) => string`      | search the archive                          | The binary's path inside an archive. The search wants exactly one file named `<name>`.                 |
-| `tagPrefix`       | `string`                            | `"v"`                                       | `tag` is `tagPrefix` + `version`; `^[A-Za-z0-9._-]*$`, empty allowed.                                  |
-| `installDir`      | `string`                            | `"~/.<name>/bin"`                           | Must start with `~/`: `$HOME` in sh, the user profile in ps1. Letters, digits, space, `.`, `_`, `-`.   |
-| `envPrefix`       | `string`                            | `name` uppercased, non-alphanumerics → `_`  | The prefix of the end-user overrides: `my-cli` → `MY_CLI_VERSION`.                                     |
-| `modifyPath`      | `boolean`                           | `true`                                      | Whether the scripts add the install dir to `PATH`.                                                     |
-| `message`         | `string`                            | none                                        | Printed after a successful install. ASCII only.                                                        |
-| `scriptUrls`      | `{ sh: string; ps1: string }`       | `baseUrl/install.sh`, `baseUrl/install.ps1` | Where you serve the scripts; the scripts print them in their hints.                                    |
-| `outDir`          | `string`                            | `"installers"`                              | Where `installgen build` writes. Not `dist/`: `goreleaser release --clean` wipes it.                   |
+| Prop              | Type                                | Default                                     | Meaning                                                                                                                      |
+| ----------------- | ----------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `name`            | `string`                            | required                                    | The binary name, `^[A-Za-z0-9][A-Za-z0-9._-]*$`; Windows installs `<name>.exe`.                                              |
+| `baseUrl`         | `string`                            | required                                    | Where the files live. https only; http is allowed on 127.0.0.1, localhost and [::1] for tests.                               |
+| `assetPath`       | `(ctx: PathContext) => string`      | required                                    | The asset's path under `baseUrl`, per platform. Must use `version` or `tag`.                                                 |
+| `platforms`       | `readonly Platform[]`               | all six                                     | Which of `linux`, `darwin`, `windows` × `amd64`, `arm64` you ship.                                                           |
+| `checksumsPath`   | `(ctx: ChecksumsContext) => string` | none: no verification, and a warning        | A shared `checksums.txt` or a per-asset `<asset>.sha256`, per platform; `ctx.asset` is the asset path.                       |
+| `signature`       | `SignatureConfig`                   | none: no signature check                    | A keyless sigstore signature on the checksums file, checked by cosign. Needs `checksumsPath`. See [Signatures](#signatures). |
+| `latestPath`      | `string`                            | `"latest"`                                  | The file under `baseUrl` that holds the latest version (`1.2.3` or `v1.2.3`).                                                |
+| `binaryInArchive` | `(ctx: PathContext) => string`      | search the archive                          | The binary's path inside an archive. The search wants exactly one file named `<name>`.                                       |
+| `tagPrefix`       | `string`                            | `"v"`                                       | `tag` is `tagPrefix` + `version`; `^[A-Za-z0-9._-]*$`, empty allowed.                                                        |
+| `installDir`      | `string`                            | `"~/.<name>/bin"`                           | Must start with `~/`: `$HOME` in sh, the user profile in ps1. Letters, digits, space, `.`, `_`, `-`.                         |
+| `envPrefix`       | `string`                            | `name` uppercased, non-alphanumerics → `_`  | The prefix of the end-user overrides: `my-cli` → `MY_CLI_VERSION`.                                                           |
+| `modifyPath`      | `boolean`                           | `true`                                      | Whether the scripts add the install dir to `PATH`.                                                                           |
+| `message`         | `string`                            | none                                        | Printed after a successful install. ASCII only.                                                                              |
+| `scriptUrls`      | `{ sh: string; ps1: string }`       | `baseUrl/install.sh`, `baseUrl/install.ps1` | Where you serve the scripts; the scripts print them in their hints.                                                          |
+| `outDir`          | `string`                            | `"installers"`                              | Where `installgen build` writes. Not `dist/`: `goreleaser release --clean` wipes it.                                         |
 
 `Os` is `"linux" | "darwin" | "windows"`, `Arch` is `"amd64" | "arm64"` (Go's names), and `Platform` is `` `${Os}/${Arch}` ``. Every value that reaches a script must be ASCII: Windows PowerShell 5.1 reads a script with no charset as ISO-8859-1.
 
@@ -254,6 +256,27 @@ windows/arm64 https://dl.example.com/my-cli/{tag}/my-cli_Windows_arm64.zip
 windows/arm64 https://dl.example.com/my-cli/{tag}/my-cli_{version}_checksums.txt
 ```
 
+### Signatures
+
+With `signature`, the scripts check the checksums file's sigstore bundle with `cosign verify-blob` before they trust any hash in it, so a host that serves a swapped binary and a matching checksum still fails. A GoReleaser `signs` entry that runs `cosign sign-blob --bundle` in GitHub Actions publishes exactly this.
+
+```ts
+checksumsPath: ({ tag, version }) => `${tag}/my-cli_${version}_checksums.txt`,
+signature: {
+	identity: ({ tag }) => `https://github.com/acme/my-cli/.github/workflows/release.yml@refs/tags/${tag}`,
+},
+```
+
+| Field        | Type                             | Default                                         | Meaning                                                                                                                                            |
+| ------------ | -------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity`   | `(ctx: PathContext) => string`   | required                                        | The certificate identity, matched exactly (`--certificate-identity`): an https URL. Interpolate `tag` so a bundle from another release is refused. |
+| `issuer`     | `string`                         | `"https://token.actions.githubusercontent.com"` | The OIDC issuer the certificate must carry (`--certificate-oidc-issuer`).                                                                          |
+| `bundlePath` | `(ctx: BundleContext) => string` | the checksums path + `.sigstore.json`           | The bundle's path under `baseUrl`, per platform; `ctx.checksums` is the checksums path.                                                            |
+
+The identity is exact rather than a regular expression: cosign matches Go's RE2, which installgen cannot validate, and an unanchored pattern quietly admits other signers.
+
+cosign is not something every machine has, so it runs when it is on `PATH`. Without it the scripts show a `!` row and go on with the sha256 check; with `<PREFIX>_INSTALL_VERIFY=require` they refuse before any download. A bundle that is missing or that cosign rejects always fails the install.
+
 ## What the scripts do
 
 `install.sh` is POSIX sh: it runs under dash, bash 3.2+, zsh and busybox ash, needs curl or wget, and runs everything from one `main` call on its last line, so a truncated download runs nothing. `install.ps1` runs on Windows PowerShell 5.1 and PowerShell 7+, needs the FullLanguage mode, and throws on failure instead of exiting, so `irm | iex` never closes the user's window.
@@ -261,10 +284,10 @@ windows/arm64 https://dl.example.com/my-cli/{tag}/my-cli_{version}_checksums.txt
 In order, both scripts:
 
 1. **Detect** the platform. sh reads `uname`; an x86_64 shell under Rosetta (`sysctl.proc_translated`) still gets the arm64 build. ps1 reads the real CPU from the registry, so an emulated x64 PowerShell on ARM64 still counts as arm64. Without a native build, darwin/arm64 falls back to darwin/amd64 with a warning that Rosetta 2 is needed, and windows/arm64 to windows/amd64 under emulation. Git Bash, MSYS and Cygwin get the `irm | iex` line instead.
-2. **Check the tools** before the first download: tar and gzip for `.tar.gz`; unzip, busybox unzip or bsdtar for `.zip`; sha256sum, shasum or openssl when checksums are configured. A missing tool is named.
+2. **Check the tools** before the first download: tar and gzip for `.tar.gz`; unzip, busybox unzip or bsdtar for `.zip`; sha256sum, shasum or openssl when checksums are configured. A missing tool is named. With a `signature`, cosign is looked up here too, and `<PREFIX>_INSTALL_VERIFY=require` refuses when it is missing.
 3. **Resolve the version**: the argument, then `<PREFIX>_VERSION`, then the baked `--default-version`, then the `latest` file. `1.2.3` and `v1.2.3` both work; whitespace and CR are stripped, and anything but `[A-Za-z0-9._+-]` is refused.
 4. **Download**, with curl's progress bar (sh) or a redrawn bar (ps1) on a terminal. With an https `baseUrl`, curl gets `--proto '=https' --tlsv1.2` and GNU wget `--https-only`.
-5. **Verify** the sha256, or show a `!` row when no checksums are published.
+5. **Verify**: with a `signature` and cosign on `PATH`, cosign checks the checksums file's bundle first (a `!` row when cosign is missing); then the sha256, or a `!` row when no checksums are published.
 6. **Install** into `installDir`. sh stages the file next to the target and renames it over; ps1 renames a running `.exe` aside before copying the new one in. A re-run says "Updated".
 7. **Update `PATH`**, unless the dir is already on it:
    - sh appends one line to the profile of `$SHELL`: `${ZDOTDIR:-$HOME}/.zshrc`, `.bash_profile` on macOS and `.bashrc` elsewhere for bash, `conf.d/<name>.fish` with `fish_add_path`, otherwise `.profile`. A re-run finds the line and adds nothing.
@@ -273,13 +296,14 @@ In order, both scripts:
 
 ### End-user overrides
 
-| sh                                   | ps1                                     | effect                              |
-| ------------------------------------ | --------------------------------------- | ----------------------------------- |
-| `curl -fsSL <url> \| sh -s -- 1.2.3` | `iex "& {$(irm <url>)} -Version 1.2.3"` | install that version                |
-| `MY_CLI_VERSION=1.2.3`               | `$env:MY_CLI_VERSION = '1.2.3'`         | the same, through the environment   |
-| `MY_CLI_INSTALL_DIR=/opt/my-cli/bin` | `$env:MY_CLI_INSTALL_DIR = 'D:\tools'`  | install somewhere else              |
-| `MY_CLI_NO_MODIFY_PATH=1`            | `$env:MY_CLI_NO_MODIFY_PATH = '1'`      | leave `PATH` and the profiles alone |
-| `NO_COLOR=1`                         | `$env:NO_COLOR = '1'`                   | no color                            |
+| sh                                   | ps1                                      | effect                                               |
+| ------------------------------------ | ---------------------------------------- | ---------------------------------------------------- |
+| `curl -fsSL <url> \| sh -s -- 1.2.3` | `iex "& {$(irm <url>)} -Version 1.2.3"`  | install that version                                 |
+| `MY_CLI_VERSION=1.2.3`               | `$env:MY_CLI_VERSION = '1.2.3'`          | the same, through the environment                    |
+| `MY_CLI_INSTALL_DIR=/opt/my-cli/bin` | `$env:MY_CLI_INSTALL_DIR = 'D:\tools'`   | install somewhere else                               |
+| `MY_CLI_NO_MODIFY_PATH=1`            | `$env:MY_CLI_NO_MODIFY_PATH = '1'`       | leave `PATH` and the profiles alone                  |
+| `MY_CLI_INSTALL_VERIFY=require`      | `$env:MY_CLI_INSTALL_VERIFY = 'require'` | refuse to install unless cosign checks the signature |
+| `NO_COLOR=1`                         | `$env:NO_COLOR = '1'`                    | no color                                             |
 
 `MY_CLI` is the `envPrefix`.
 
@@ -344,7 +368,9 @@ If users fetch the scripts from a shorter URL that redirects to them, set `scrip
 
 ## Security model
 
-The checksums come from the same host as the binaries. They catch a truncated or corrupted download, a stale CDN copy, and a half-finished upload. They do not protect against a compromised host or leaked bucket credentials: whoever can replace the binary can replace its checksum too. The scripts add no signature check (minisign, cosign); that is a non-goal for now.
+The checksums come from the same host as the binaries. They catch a truncated or corrupted download, a stale CDN copy, and a half-finished upload. On their own they do not protect against a compromised host or leaked bucket credentials: whoever can replace the binary can replace its checksum too.
+
+A `signature` closes that gap where cosign runs: the checksums file must be signed by the configured identity, which for a GitHub Actions release is the release workflow on that tag, and a host cannot forge that. It does not cover a compromised release workflow or repository, which signs whatever it builds, nor a machine without cosign unless the user sets `<PREFIX>_INSTALL_VERIFY=require`.
 
 What the scripts guarantee themselves: every value from your config is single-quoted, so nothing in it runs; the version from `latest` or the user is validated before use; with an https `baseUrl`, curl and GNU wget refuse to follow a redirect to http, and `install.ps1` refuses one too (Windows PowerShell 5.1's .NET Framework would otherwise follow it); and the scripts are ASCII, so no encoding changes what they say.
 
@@ -356,7 +382,7 @@ What the scripts guarantee themselves: every value from your config is single-qu
 - elevation, system-wide installs, an uninstall command (the scripts print the one-line `rm`)
 - uploading: installgen writes the scripts, your pipeline uploads them
 - a JSON config
-- signatures, shell completions, standalone installgen binaries
+- minisign and key-pair signatures, shell completions, standalone installgen binaries
 
 ## Library exports
 

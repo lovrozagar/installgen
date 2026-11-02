@@ -4,7 +4,8 @@ param([string]$Version)
 #   powershell -c "irm <url> | iex"                  the latest version
 #   iex "& {$(irm <url>)} -Version 1.2.3"            a specific version
 #
-# Environment: MY_CLI_VERSION, MY_CLI_INSTALL_DIR, MY_CLI_NO_MODIFY_PATH=1, NO_COLOR.
+# Environment: MY_CLI_VERSION, MY_CLI_INSTALL_DIR, MY_CLI_NO_MODIFY_PATH=1,
+# MY_CLI_INSTALL_VERIFY=require, NO_COLOR.
 # Windows PowerShell 5.1 and PowerShell 7+. Failures throw and leave the session open: under `irm | iex`,
 # ending the script any other way would close the user's window.
 
@@ -171,20 +172,39 @@ param([string]$Version)
 	$assetPath = ''
 	$format = ''
 	$checksumsPath = ''
+	$bundlePath = ''
+	$identity = ''
+	$issuer = ''
 	$binaryInArchive = ''
 	switch ($platform) {
 		'windows/amd64' {
 			$assetPath = ('download/' + $tag + '/my-cli_' + $ver + '_windows_amd64.zip')
 			$format = 'zip'
 			$checksumsPath = ('download/' + $tag + '/my-cli_' + $ver + '_checksums.txt')
+			$bundlePath = ''
+			$identity = ''
+			$issuer = ''
 			$binaryInArchive = ''
 		}
 		'windows/arm64' {
 			$assetPath = ('download/' + $tag + '/my-cli_' + $ver + '_windows_arm64.zip')
 			$format = 'zip'
 			$checksumsPath = ('download/' + $tag + '/my-cli_' + $ver + '_checksums.txt')
+			$bundlePath = ''
+			$identity = ''
+			$issuer = ''
 			$binaryInArchive = ''
 		}
+	}
+
+	# Signature: cosign checks the checksums file when it is on PATH; <PREFIX>_INSTALL_VERIFY=require refuses without it
+	$verify = $env:MY_CLI_INSTALL_VERIFY
+	if ($verify -and $verify -cne 'require') { Fail "MY_CLI_INSTALL_VERIFY ${verify}: want require, or unset" }
+	$cosign = $null
+	if ($bundlePath) { $cosign = Get-Command cosign -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 }
+	if ($verify) {
+		if (-not $bundlePath) { Fail 'MY_CLI_INSTALL_VERIFY=require: no signature is published for this release' }
+		if (-not $cosign) { Fail "MY_CLI_INSTALL_VERIFY=require: cosign is not installed to verify the checksums' signature" }
 	}
 
 	try {
@@ -220,12 +240,18 @@ param([string]$Version)
 			$assetPath = ('download/' + $tag + '/my-cli_' + $ver + '_windows_amd64.zip')
 			$format = 'zip'
 			$checksumsPath = ('download/' + $tag + '/my-cli_' + $ver + '_checksums.txt')
+			$bundlePath = ''
+			$identity = ''
+			$issuer = ''
 			$binaryInArchive = ''
 		}
 		'windows/arm64' {
 			$assetPath = ('download/' + $tag + '/my-cli_' + $ver + '_windows_arm64.zip')
 			$format = 'zip'
 			$checksumsPath = ('download/' + $tag + '/my-cli_' + $ver + '_checksums.txt')
+			$bundlePath = ''
+			$identity = ''
+			$issuer = ''
 			$binaryInArchive = ''
 		}
 		}
@@ -250,6 +276,23 @@ param([string]$Version)
 				Save-Url -Url $checksumsUrl -Path $sumsFile -Label ''
 			} catch {
 				Fail "download failed: $checksumsUrl ($($_.Exception.Message))"
+			}
+			if ($cosign) {
+				$bundleUrl = "$baseUrl/$bundlePath"
+				$bundleFile = Join-Path $tmp 'bundle'
+				try {
+					Save-Url -Url $bundleUrl -Path $bundleFile -Label ''
+				} catch {
+					Fail "download failed: $bundleUrl ($($_.Exception.Message))"
+				}
+				# *> $null: under 'Stop', Windows PowerShell 5.1 turns a native command's redirected stderr into an error
+				& $cosign.Source verify-blob --bundle $bundleFile --certificate-identity $identity --certificate-oidc-issuer $issuer $sumsFile *> $null
+				if ($LASTEXITCODE -ne 0) {
+					Fail "$($checksumsPath.Substring($checksumsPath.LastIndexOf('/') + 1)): cosign could not verify it as signed by $identity"
+				}
+				Write-Ok 'Signed' 'cosign'
+			} elseif ($bundlePath) {
+				Write-WarnRow 'Signed' 'skipped: cosign not installed'
 			}
 			$lines = @([IO.File]::ReadAllLines($sumsFile) | Where-Object { $_.Trim() })
 			$expected = ''
