@@ -126,6 +126,8 @@ function withCosign(runner: Runner, box: Sandbox): { shims: string; env: Record<
 	fakeCosign(shims, WIN)
 	return { shims, env: { PATH: `${shims}${delimiter}${runner.systemPath}` } }
 }
+/* PowerShell's error view wraps a long message at the console width, anywhere in it */
+const unwrapped = (text: string) => text.replaceAll(/\s+/g, "")
 const prefixOf = (rel: { baseUrl: string }) => rel.baseUrl.slice(server.url.length)
 const assetRequested = (rel: { baseUrl: string; asset(p: string, v: string): string }) =>
 	server.requested(prefixOf(rel)).includes(rel.asset(`windows/${ARCH}`, "1.2.3"))
@@ -305,7 +307,9 @@ describe.each(PS_RUNNERS)("install.ps1 under $name", (runner) => {
 			const rel = release({ config: signed, bundle: "forged" })
 			const r = await install(runner, box, rel.ps1Url, { env: cosign.env })
 			expect(r.status).not.toBe(0)
-			expect(output(r)).toContain(`checksums.txt: cosign could not verify it as signed by ${IDENTITY}v1.2.3`)
+			expect(unwrapped(output(r))).toContain(
+				unwrapped(`checksums.txt: cosign could not verify it as signed by ${IDENTITY}v1.2.3`),
+			)
 			expect(existsSync(target(box))).toBe(false)
 		})
 
@@ -316,7 +320,7 @@ describe.each(PS_RUNNERS)("install.ps1 under $name", (runner) => {
 			server.remove(`${prefixOf(rel)}/v1.2.3/checksums.txt.sigstore.json`)
 			const r = await install(runner, box, rel.ps1Url, { env: cosign.env })
 			expect(r.status).not.toBe(0)
-			expect(output(r)).toMatch(/download failed: .*\/v1\.2\.3\/checksums\.txt\.sigstore\.json/)
+			expect(unwrapped(output(r))).toMatch(/downloadfailed:.*\/v1\.2\.3\/checksums\.txt\.sigstore\.json/)
 		})
 
 		test("no cosign: a warn row, and the install goes on", async () => {
@@ -356,7 +360,7 @@ describe.each(PS_RUNNERS)("install.ps1 under $name", (runner) => {
 			const rel = release({ config: cfg })
 			const r = await install(runner, box, rel.ps1Url, { env: { ...env, MY_CLI_INSTALL_VERIFY: "require" } })
 			expect(r.status).not.toBe(0)
-			expect(output(r)).toContain(message)
+			expect(unwrapped(output(r))).toContain(unwrapped(message))
 			expect(assetRequested(rel)).toBe(false)
 		})
 
@@ -365,7 +369,7 @@ describe.each(PS_RUNNERS)("install.ps1 under $name", (runner) => {
 			const rel = release({ config: signed })
 			const r = await install(runner, box, rel.ps1Url, { env: { MY_CLI_INSTALL_VERIFY: "yes" } })
 			expect(r.status).not.toBe(0)
-			expect(output(r)).toContain("MY_CLI_INSTALL_VERIFY yes: want require, or unset")
+			expect(unwrapped(output(r))).toContain(unwrapped("MY_CLI_INSTALL_VERIFY yes: want require, or unset"))
 			expect(assetRequested(rel)).toBe(false)
 		})
 	})
