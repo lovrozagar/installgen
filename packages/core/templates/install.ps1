@@ -251,8 +251,12 @@ param([string]$Version)
 				} catch {
 					Fail "download failed: $bundleUrl ($($_.Exception.Message))"
 				}
-				# *> $null: under 'Stop', Windows PowerShell 5.1 turns a native command's redirected stderr into an error
-				& $cosign.Source verify-blob --bundle $bundleFile --certificate-identity $identity --certificate-oidc-issuer $issuer $sumsFile *> $null
+				# Windows PowerShell 5.1 turns a native command's stderr into an error record, which 'Stop' makes
+				# terminating even when redirected; 'Continue' in a child scope leaves $LASTEXITCODE as the only verdict
+				$null = & {
+					$ErrorActionPreference = 'Continue'
+					& $cosign.Source verify-blob --bundle $bundleFile --certificate-identity $identity --certificate-oidc-issuer $issuer $sumsFile 2>&1
+				}
 				if ($LASTEXITCODE -ne 0) {
 					Fail "$($checksumsPath.Substring($checksumsPath.LastIndexOf('/') + 1)): cosign could not verify it as signed by $identity"
 				}
