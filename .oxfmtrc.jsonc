@@ -12,7 +12,6 @@
 		"**/test-results/**",
 		"**/playwright-report/**",
 		"**/_gen/**",
-		"**/tests/fixtures/sigstore/**",
 		"*.lock",
 		".tmp/**",
 		".agents/**",
@@ -27,6 +26,7 @@
 		"GEMINI.md",
 		".oxfmtrc.jsonc",
 		"**/tests/golden/**",
+		"**/tests/fixtures/sigstore/**",
 		".tmp/**"
 	]
 }
