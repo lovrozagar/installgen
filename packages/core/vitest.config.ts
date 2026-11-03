@@ -10,7 +10,7 @@ export default defineConfig({
 			thresholds: { branches: 100, functions: 100, lines: 100, perFile: true, statements: 100 },
 		},
 		include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
-		/* Docker e2e cases pull images and start containers */
-		testTimeout: 60_000,
+		/* Docker e2e cases pull images and start containers; a host shell gets 110 s (tests/support/shells.ts) */
+		testTimeout: 120_000,
 	},
 })

@@ -53,6 +53,9 @@ function ttyArgs(command: string, platform: NodeJS.Platform): [string, string[]]
 		: ["script", ["-qec", command, "/dev/null"]]
 }
 
+/* A host shell's first install on a cold Windows runner took 46 s of the old 50 s (windows-latest, PowerShell 5.1) */
+const HOST_TIMEOUT = 110_000
+
 function exec(
 	bin: string,
 	args: readonly string[],
@@ -125,12 +128,12 @@ function hostRunner(shell: string): Runner {
 			const full = { ...windowsBase(), ...env, TERM: env.TERM ?? "xterm-256color" }
 			if (kind === "ps1") {
 				const args = ["-NoProfile", "-NonInteractive", "-Command", command]
-				if (!tty) return exec(shell, args, { env: full, cwd, timeout: 50_000 })
+				if (!tty) return exec(shell, args, { env: full, cwd, timeout: HOST_TIMEOUT })
 				const [bin, ttyArgv] = ttyArgs([shell, ...args].map(shQuote).join(" "), process.platform)
-				return exec(bin, ttyArgv, { env: full, cwd, timeout: 50_000 })
+				return exec(bin, ttyArgv, { env: full, cwd, timeout: HOST_TIMEOUT })
 			}
 			const [bin, args] = tty ? ttyArgs(command, process.platform) : ["sh", ["-c", command]]
-			return exec(bin, args, { env: full, cwd, timeout: 50_000 })
+			return exec(bin, args, { env: full, cwd, timeout: HOST_TIMEOUT })
 		},
 	}
 }
