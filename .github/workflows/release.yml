@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 env:
-  BUN_VERSION: "1.4.3"
+  BUN_VERSION: "1.4.4"
   PACKAGE_NAME: "@lovrozagar/installgen"
   PACKAGE_DIR: packages/core
 

@@ -407,7 +407,7 @@ if (ps1) writeFileSync("install.ps1", ps1)
 
 ## Develop
 
-Requires [Bun](https://bun.sh) 1.4.3 (the root `packageManager`) and Node 22.18 or later.
+Requires [Bun](https://bun.sh) 1.4.4 (the root `packageManager`) and Node 22.18 or later.
 
 ```bash
 bun install
