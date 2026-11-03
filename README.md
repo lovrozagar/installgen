@@ -386,7 +386,24 @@ What the scripts guarantee themselves: every value from your config is single-qu
 
 ## Library exports
 
-`@lovrozagar/installgen` exports `defineConfig` and the types `InstallgenConfig`, `PathContext`, `ChecksumsContext`, `VersionToken`, `TagToken`, `Os`, `Arch` and `Platform`. The CLI is the bin; it has no programmatic API.
+`@lovrozagar/installgen` exports `defineConfig`, `generateInstallers`, `InstallgenError` and the types `InstallgenConfig`, `SignatureConfig`, `PathContext`, `ChecksumsContext`, `BundleContext`, `VersionToken`, `TagToken`, `Os`, `Arch`, `Platform`, `Rendered` and `RenderOptions`.
+
+`generateInstallers(config, { defaultVersion })` returns `{ sh, ps1 }`, the scripts `installgen build` would write, for a generator that places files itself. A script is absent when no platform needs it, and a config `build` refuses throws `InstallgenError` with the same message.
+
+```ts
+import { writeFileSync } from "node:fs"
+import { generateInstallers } from "@lovrozagar/installgen"
+
+const { sh, ps1 } = generateInstallers({
+	name: "my-cli",
+	baseUrl: "https://github.com/acme/my-cli/releases",
+	assetPath: ({ tag, os, arch }) => `download/${tag}/my-cli_${os}_${arch}${os === "windows" ? ".zip" : ".tar.gz"}`,
+	checksumsPath: ({ tag }) => `download/${tag}/checksums.txt`,
+	latestPath: "latest/download/version.txt",
+})
+if (sh) writeFileSync("install.sh", sh, { mode: 0o755 })
+if (ps1) writeFileSync("install.ps1", ps1)
+```
 
 ## Develop
 

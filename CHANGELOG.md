@@ -2,6 +2,12 @@
 
 All notable changes to [`@lovrozagar/installgen`](https://www.npmjs.com/package/@lovrozagar/installgen) are documented in this file.
 
+## 0.3.0
+
+### Added
+
+- `generateInstallers(config, options)` on the package entry: the scripts `installgen build` writes, returned as `{ sh, ps1 }` for a generator that writes files itself. `InstallgenError`, `Rendered` and `RenderOptions` are exported with it.
+
 ## 0.2.0
 
 ### Added

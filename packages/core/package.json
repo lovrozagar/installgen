@@ -1,6 +1,6 @@
 {
 	"name": "@lovrozagar/installgen",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Generate curl | sh and irm | iex installers for prebuilt CLI binaries on any host",
 	"keywords": [
 		"binaries",
